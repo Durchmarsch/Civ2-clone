@@ -31,11 +31,13 @@ civ.getImprovement(8).Effects.Add(civ.core.Effects.Walled, 200);
 civ.getImprovement(10).Effects.Add(civ.core.Effects.TaxMultiplier, 50)
 civ.getImprovement(10).Effects.Add(civ.core.Effects.LuxMultiplier, 50)
 --Cathedral,                12, 3,    MT,
+civ.getImprovement(11).Effects.Add(civ.core.Effects.ContentFace, 3)
 --University,               16, 3,    Uni,
 civ.getImprovement(12).Effects.Add(civ.core.Effects.ScienceMultiplier, 50)
 --Mass Transit,             16, 4,    MP,
 civ.getImprovement(13).Effects.Add(civ.core.Effects.EliminatePopulationPollution, 1)
 --Colosseum,                10, 4,    Cst,
+civ.getImprovement(14).Effects.Add(civ.core.Effects.ContentFace, 3)
 --Factory,                  20, 4,    Ind,
 --Manufacturing Plant,      32, 6,    Rob,
 --SDI Defense,              20, 4,    Las,
@@ -86,3 +88,14 @@ civ.getImprovement(39).Effects.Add(civ.core.Effects.FoodStorage, 50)
 --Hanging Gardens (40): +1 content citizen in every city of the civilization.
 civ.getImprovement(40).CivWide = true
 civ.getImprovement(40).Effects.Add(civ.core.Effects.ContentFace, 1)
+
+--Michelangelo's Chapel (49): acts as a Cathedral in every city of the civilization.
+civ.getImprovement(49).CivWide = true
+civ.getImprovement(49).Effects.Add(civ.core.Effects.ContentFace, 3)
+
+--Copernicus' Observatory (50): +100% science in its own city.
+civ.getImprovement(50).Effects.Add(civ.core.Effects.ScienceMultiplier, 100)
+
+--Shakespeare's Theatre (52): no unhappiness in its own city (all unhappy made content).
+-- Modelled as a large local ContentFace; the enum has no "make all content" effect.
+civ.getImprovement(52).Effects.Add(civ.core.Effects.ContentFace, 30)

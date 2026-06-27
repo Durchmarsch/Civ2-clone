@@ -170,10 +170,15 @@
   - `Model/Core/Cities/Improvement.cs`:`CivWide` 标志;`Engine/src/Scripting/ScriptObjects/CityImprovement.cs`:Lua 入口 `improvement.CivWide = true`。
   - `Engine/src/Cities/CityExtensions.cs`:`City.EffectImprovements()` = 本城改良 + 全文明其它城的 CivWide 奇观;已接入 `GetMultiplier`（科研 / 税收 / 奢侈）、`ContentFace`（幸福度）、`GetFoodStorage`（存粮）。
   - 低风险：无奇观标 CivWide 时行为完全不变。
-- **已填的奇观数据**（`improvements.lua`，效果按原版、且能映射到现有 `Effects` 枚举的）:
-  - 金字塔（索引 39）：全文明等同粮仓 → `FoodStorage 50` + CivWide。
-  - 悬空花园（索引 40）：全文明每城 +1 内容 → `ContentFace 1` + CivWide。
-- **未填 / 待办**：大多数奇观要么数值需可靠来源核实（维基 403，游戏自带 `Describe.txt` 只有风味文字、无机制数值），要么需要新机制（列奥纳多工坊升级单位、达尔文送科技、马可波罗建大使馆、神谕翻倍庙宇、巴赫按大陆范围等），且需先补齐基础建筑（Cathedral / Colosseum）的效果。索引换算：改良索引 = `RULES.TXT @IMPROVE` 段序号 − 1。
+- **已填的效果数据**（`improvements.lua`，效果经联网核实、且能映射到现有 `Effects` 枚举的）:
+  - 基础建筑补漏（原本 lua 没定义）:Cathedral（索引 11）`ContentFace 3`、Colosseum（索引 14）`ContentFace 3`。
+  - 金字塔（39）：全文明等同粮仓 → `FoodStorage 50` + CivWide。
+  - 悬空花园（40）：全文明每城 +1 内容 → `ContentFace 1` + CivWide。
+  - 米开朗琪罗教堂（49）：全文明每城相当于一座 Cathedral → `ContentFace 3` + CivWide。
+  - 哥白尼天文台（50）：本城科研 +100% → `ScienceMultiplier 100`（本城）。
+  - 莎士比亚剧院（52）：本城无动乱 → 用较大的本地 `ContentFace 30` 近似（枚举里没有“全部变满足”这种效果）。
+  - 来源：CivFanatics 论坛、Civ wiki（`civilization.fandom.com`）的各奇观/建筑页 —— 经网络搜索核实（直接抓取被 403，仅用搜索摘要）。
+- **未填 / 待办**：需要新机制的奇观（列奥纳多工坊升级单位、达尔文送科技、马可波罗建大使馆、神谕翻倍庙宇、牛顿翻倍科研建筑、巴赫按大陆范围、女权运动减军事不满等）现有 `Effects` 枚举表达不了，待单独实现。索引换算：改良索引 = `RULES.TXT @IMPROVE` 段序号 − 1。
 
 ## 11. iCloud 重复 DLL 免疫 + custom map 不出现（第三轮）
 
@@ -201,3 +206,65 @@
   - **苔原只在高纬两档、冰原只在最高纬一档**出现，中低纬完全没有（满足“苔原 / 冰原只在南北两极”）；
   - 非冰原陆地约 7% 概率带河流。
 - 这是简化版的纬度气候模型，非完全复刻原版算法；`Climate` / `Temperature` 档位尚未纳入加权（待办）。
+
+---
+
+> 第四轮（macOS，工作目录已从 iCloud 迁到 `/Users/fanbin/Civ2-clone`，不再受 iCloud 同步副本困扰）。本轮通过给移动 / 回合流程加临时 `[MOVEDIAG]` / `[RESDIAG]` 控制台诊断、复现后读日志定位，定位完成后已全部移除。
+
+## 14. 单位走上森林 / 丘陵后整局卡死（第四轮）
+
+- **现象**：单位走到草地以外（森林 / 丘陵 / 山）后，常常出现“面板还显示有移动力、按键却没反应、整局卡住”。草地上正常。
+- **根因**：`Engine/src/Game.ActionsUnits.cs` 的 `ChooseNextUnit` 里，判断“刚激活的单位是否已走完、要不要切下一个”用了**精确相等** `nextUnit.MovePointsLost == nextUnit.MaxMovePoints`。移动力内部 ×3（`MovementMultiplier`）：走平地恰好归零（`已花 == 上限`，相等成立）；但走森林 / 丘陵 / 山会**超额扣分**（如 2 移动力=6 点，走 1 格平地+1 格森林 = 已花 9 > 上限 6），`9 == 6` 不成立 → 不切下一个单位、也不结束回合 → 卡在这个已耗尽单位上。AI 单位走上高耗地形超额时同样触发，表现为轮到 AI 后整局僵住。
+- **诊断**：日志实证 `next=Horsemen mp=6 → SetUnitActive → activeNow=Horsemen mp=-3`，随后按键全无反应。
+- **修复**：改为 `nextUnit.Dead || nextUnit.MovePoints <= 0`（`MovePoints = 上限 − 已花`，`<= 0` 同时覆盖“恰好归零”和“超额”）。仅一处判断，低风险。
+- **核对的 Civ2 规则**（防止误改）：单位**保留**剩余移动力、不会因踩森林清零；本回合**没动过**则保证能进高耗地形（哪怕点数不够），动过且不够时才有几率被挡。本引擎只在 `MovePoints > 0` 时允许移动，未实现那条“概率被挡”。
+
+## 15. 从不提示选科技（第四轮）
+
+- **现象**：玩到很多回合也没弹“选研究目标”窗口，无法研发科技。
+- **根因**：`Engine/src/GameTurn.cs` 的 `CitiesTurn` 把“选科技”嵌在 `if (science > 0)` 里、且在逐城循环内。`GetBaseScience = Trade × ScienceRate / 100` 是**整数除法**：贸易 1、科研率 60% → `1×60/100 = 0`，产出被截成 0 → 永远进不了 `science > 0` → 永不弹窗。诊断实证：`city=Beijing trade=1 sciRate=60 sciThisTurn=0`。（此 bug 与“显示科研回合数”那次改动无关——后者是纯显示；只是之前“卡死（§14）”让游戏跑不到这步，现在才暴露。）
+- **修复**：把“选研究目标 / 完成研究”从 `science > 0` 里拿出来、移到逐城循环**之外**，每个文明每回合判一次——只要 `ReseachingAdvance < 0` 就让玩家选，**与当回合产出无关**；循环内只负责累加 `activeCiv.Science`。
+- **连带崩溃修复**：放开门槛后，开局 `StartNextTurn` 会对每个文明调 `CalculateAvailableResearch`，而 0 号文明**野蛮人**没有城市、`AllowedAdvanceGroups` 为 null → `AdvanceFunctions.cs:216` 空引用崩溃。加两道护栏：① 研究块只对 `activeCiv.Cities.Count > 0` 的文明执行（原版 Civ2 也是没城不能研究，顺带排除野蛮人）；② `CalculateAvailableResearch` 开头判 `AllowedAdvanceGroups == null || Advances == null` 直接返回空表。
+
+## 16. 科技面板显示“还需多少回合”（第四轮 / 需求）
+
+- **需求**：在科技面板（Science Advisor，F6）显示当前研究还需多少回合。
+- **实现**（`RaylibUI/RunGame/GameControls/Advisors/ScienceAdvisorWindow.cs`）：在 “Researching: <科技>” 那行后面追加 `(N Turns)`。`N = ceil((CalculateScienceCost − civ.Science) / 各城 GetScience() 之和)`；产出为 0 时显示 `—`（永远研究不完）。纯显示，不改任何科研状态。
+- 备注：曾先尝试加在右侧主状态栏 `StatusPanel`，后按用户要求挪到科技面板，主状态栏改动已回退。
+
+## 17. 无小键盘的斜向移动键（第四轮 / 需求）
+
+- **需求**：用户没有小键盘，数字键 1-9 难用，要用 Shift/Ctrl+方向键走斜向。
+- **实现**（`RaylibUI/RunGame/GameModes/MovingPieces.cs` 的 `Actions` 字典）：`Shortcut` 结构体把 Shift/Ctrl 纳入判等与哈希，故能与普通方向键共存。新增：
+  - **Shift + ← / →** = 左上（西北 `TryMoveNorthWest`） / 右上（东北 `TryMoveNorthEast`）
+  - **Ctrl + ← / →** = 左下（西南 `TryMoveSouthWest`） / 右下（东南 `TryMoveSouthEast`）
+  - 普通方向键仍为 北/南/西/东；数字键 1-9 / 小键盘不变。
+- 仅在**移动单位**（`MovingPieces`）模式生效。“查看模式”（`ViewPiece`）的光标移动用 `Dictionary<Key, …>` 按 `key.Key` 查表、不读修饰键，要支持 Shift/Ctrl 斜向需改其查表方式（未做）。
+
+## 18. 读取存档崩溃（ExtendedData 格式不兼容）（第四轮）
+
+- **现象**：Game → Load Game 读自己存的档，`JsonException: ... could not be converted to Dictionary<String,String>. Path: $[0].ExtendedData` 直接崩溃退出。
+- **根因**：**写档与读档格式不一致**。写档用自定义的 `UTF8JsonWriterExtensions.WriteNonDefaultFields`，它把 `Dictionary<string,string>` 当 `IEnumerable` 处理，写成**数组** `[{"Key":"horde","Value":"1"}]`；读档用标准 `System.Text.Json`，`JsonUnitData.ExtendedData` 是 `Dictionary<string,string>`，期望**对象** `{"horde":"1"}`。任何含 `ExtendedData` 的单位（野蛮人 horde 标记，AI 经 Lua 设置）都会让读档崩溃。
+- **修复**：新增 `Engine/src/SaveLoad/SerializationUtils/ExtendedDataConverter.cs`（`JsonConverter<Dictionary<string,string>>`），**两种 JSON 形状都能读**（数组 `[{Key,Value}]` 与对象 `{}`）。在 `GameSerializer.Read` 读 `units` 时 `new JsonSerializerOptions { Converters += ExtendedDataConverter }` 注册它。
+  - **坑**：起初把转换器挂成属性特性 `[JsonConverter(...)]`，但 `JsonElement.Deserialize<JsonUnitData[]>()` 这条路径**不认**该特性（栈里仍走默认 `JsonDictionaryConverter`，clean rebuild 后隔离/全量都失败）。改用 **options 显式注册** 才稳定生效，特性已移除。
+- **回归测试**：`Core.Tests/SaveLoad/GameSerializerTests.cs` 的 round-trip 给单位加 `ExtendedData["horde"]="1"` 并断言读回——“去掉转换器必崩（复现用户异常）、加上通过”，全套 117/117。
+
+## 19. 第四轮改动文件清单
+
+- `Engine/src/Game.ActionsUnits.cs` —— 移动卡死修复（`MovePoints <= 0`）
+- `Engine/src/GameTurn.cs` —— 选科技移出 `science>0` 门槛 / 移出逐城循环 / 限有城市文明
+- `Engine/src/AdvanceFunctions.cs` —— `CalculateAvailableResearch` null 防御
+- `RaylibUI/RunGame/GameControls/Advisors/ScienceAdvisorWindow.cs` —— 科技面板显示 `(N Turns)`
+- `RaylibUI/RunGame/GameModes/MovingPieces.cs` —— Shift/Ctrl+方向键斜向移动
+- `Engine/src/SaveLoad/SerializationUtils/ExtendedDataConverter.cs`（新增）—— ExtendedData 数组/对象兼容读取
+- `Engine/src/SaveLoad/GameSerializer.cs` —— 读 units 时注册 `ExtendedDataConverter`
+- `Engine/src/SaveLoad/Objects/v1/JsonUnitData.cs` —— ExtendedData 注释（特性方案已弃用）
+- `Core.Tests/SaveLoad/GameSerializerTests.cs` —— ExtendedData round-trip 回归
+- `Engine/appsettings.json` —— 资产路径指向 `/Users/fanbin/Civ2-clone/Civilization 2`
+
+## 20. 仍未解决 / 待办（第四轮）
+
+- **`ViewPiece` 模式不支持 Shift/Ctrl 斜向**（见 §17），需改其按键查表方式。
+- 科研“产出整数截断”本身仍在（贸易低的城每回合 0 beaker，§15 只解决了“能选科技”，没改产出舍入）；是否要改舍入方式待定。
+- `Climate` / `Temperature` / `Age` 仍未接入地图生成（承 §12 / §13）。
+- 单城单弹窗偶发卡死（承第二轮 §9 末）尚未复现定位。
