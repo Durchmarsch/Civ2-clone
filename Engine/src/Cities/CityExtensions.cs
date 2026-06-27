@@ -26,12 +26,26 @@ namespace Civ2engine
             var totalSheilds = 0;
             var totalTrade = 0;
 
+            // Colossus: +1 trade on every worked tile of its city that already produces trade.
+            var hasColossus = city.Improvements.Any(i => i.Name == "Colossus");
             city.WorkedTiles.ForEach(t =>
             {
                 totalFood += t.GetFood(lowOrganisation);
                 totalSheilds += t.GetShields(lowOrganisation);
-                totalTrade += t.GetTrade(orgLevel);
+                var tileTrade = t.GetTrade(orgLevel);
+                if (hasColossus && tileTrade > 0)
+                {
+                    tileTrade++;
+                }
+
+                totalTrade += tileTrade;
             });
+
+            // King Richard's Crusade: +1 shield on every worked tile of its city.
+            if (city.Improvements.Any(i => i.Name == "King Richard's Crusade"))
+            {
+                totalSheilds += city.WorkedTiles.Count;
+            }
 
             // Production buildings (Factory, Power/Hydro/Nuclear Plant, Mfg Plant) and the
             // Hoover Dam boost shield output. Additive, matching Civ2's +150% maximum.

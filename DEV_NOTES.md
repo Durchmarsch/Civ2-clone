@@ -300,3 +300,92 @@
   - `Engine/src/Cities/CityExtensions.cs`：算完地块护盾后，按 `EffectImprovements` 里 `ShieldMultiplier` 之和加法提升 `totalSheilds`（`totalSheilds += totalSheilds * bonus / 100`）。
   - `improvements.lua`：Factory(15)/Mfg Plant(16)/Power Plant(19)/Hydro(20)/Nuclear(21) 各 `ShieldMultiplier 50`；**Hoover Dam(61)** `ShieldMultiplier 50` + CivWide。
 - **已知简化**：加法模型不强制“发电厂需先有工厂才生效”、也不强制三种发电厂互斥;正常建造顺序（工厂→发电厂→Mfg）结果与原版一致，极端堆叠会偏高。胡佛的“同大陆”范围近似为全文明。
+
+---
+
+> 第六轮（读档功能首次真正可用后暴露的一连串 bug）。**主线**：用户读档后遇到“城市只能造建筑不能造军队 / 科技顾问一点就崩 / 科研产出归零”，逐层往下挖，最终定位到三个独立的读档 bug + 一个启动方式陷阱。**关键教训**：存档的 `Advances` / `Improvements` 位数组都被 `Clamp()`（裁掉末尾 false）压缩，读档侧多处按“完整科技 / 改良数”去索引这个被裁短的数组，造成越界或错位。
+
+## 23. 改用 Alt+方向键走斜向（修正第 17 节）
+
+- **现象**：第 17 节用 Ctrl+←/→ 走左下/右下，但在 macOS 上完全无效。
+- **根因**（诊断日志实证）：macOS 把 **Ctrl+←/→ 当作系统“切换桌面空间（Spaces）”快捷键**截走，方向键事件根本到不了游戏（日志里只有 `raw=LeftControl`，从来没有 `raw=Left ctrl=True`）。Shift 不被系统占用，故 Shift 斜向正常。
+- **修复**：下半区斜向改用 **Alt(Option)+←/→**。
+  - `Model/Controls/Menu/Shortcut.cs`：`Shortcut` 结构体新增 `Alt` 字段（构造参数 / 属性 / `Equals` / `GetHashCode` / `ToString` / `Parse` 全部带上 Alt）。
+  - `RaylibUI/RunGame/GameScreen.cs:OnKeyPress`：检测 `LeftAlt/RightAlt` 并写进 `Shortcut.Alt`;**删掉了原来“按 Alt 聚焦菜单栏”的早退**（它会拦截 Alt+方向键）——代价是 Alt 不再用于键盘打开菜单（菜单仍可鼠标点）。
+  - `RaylibUI/RunGame/GameModes/MovingPieces.cs`：`Alt+←/→` → `TryMoveSouthWest/SouthEast`;Ctrl 版保留作非 macOS 平台的后备。
+- 上半区斜向仍是 **Shift+←/→**（左上/右上），普通方向键仍是北/南/西/东。
+
+## 24. 读档后城市只能造建筑、不能造军队（第六轮）
+
+- **现象**：读档后进城市生产菜单只有建筑，没有军队;新城默认造战士却提示“warrior has been built”。
+- **根因**：`Engine/src/Production/ProductionCabalilities.cs:InitializeProductionLists` 的过期判断 `o.ExpiresTech < c.Advances.Length && !c.Advances[o.ExpiresTech]`：读档后 `civ.Advances` 被 `Clamp()` 裁短，而单位的“过期科技（Until）”索引（如战士在封建 ≈30）**超出裁短后的数组长度** → 子句整体为 false → 单位被误判“已过期”排除。建筑 `ExpiresTech=Nil` 走另一分支不受影响，所以只剩建筑。
+- **修复**：过期判断改为 `o.ExpiresTech == Nil || o.ExpiresTech >= c.Advances.Length || !c.Advances[o.ExpiresTech]`——索引越界视为“文明还没有那个科技、未过期”。
+- **回归测试**：`Core.Tests/Production/ProductionListTests.cs`——短 `Advances` 数组 + 高 `Until` 索引的单位必须可造（还原必败、修复通过）。
+
+## 25. 科技顾问（F6）一点就崩 + 读档 Advances 越界（第六轮）
+
+- **现象**：读档后打开科技顾问（Advisors→Science / F6）立刻 `IndexOutOfRangeException` 崩溃退出。
+- **根因**：`ScienceAdvisorWindow` 用 `for i in allAdvances.Length` 遍历并访问 `_civ.Advances[i]`，但读档后 `Advances` 被裁短 → `i` 超长越界。另外该窗口判断“是否在研究”用 `ReseachingAdvance != -1`，而科技研究完成后 `GiveAdvance` 会把它置成 `No(-2)`，`-2 != -1` 成立 → `Advances[-2]` 也会越界。
+- **根因修复（治本）**：`Engine/src/SaveLoad/GameSerializer.cs:HydrateCiv` 读档时把 `Advances` **补齐到完整科技数**（`PadAdvances`，末尾填 false）。这样全引擎/界面里所有“按科技索引访问 `Advances`”的地方都不再越界（生产列表、科技顾问、`GiveAdvance` 给高索引科技赋值等）。
+- **防御性修复**：`ScienceAdvisorWindow` 循环加 `i >= _civ.Advances.Length` short-circuit;“是否在研究”改用 `ReseachingAdvance >= 0 && < Advances.Length`。
+
+## 26. 读档后改良整体错位一格 → 首都丢皇宫 → 科研归零（第六轮，本轮核心 bug）
+
+- **现象**：读档后**所有文明**每座城净贸易都=1、科研都=0;连首都（Beijing）都有腐败（应为 0）。
+- **根因**：存档与读档的改良位数组**索引差一位**。
+  - 存档（`JsonCityData:40`）：`bit[i]` 对应 `gameRules.Improvements[i]`（索引 0 是占位 “Nothing”，恒 false）。Beijing `bit[1]=true` = 皇宫（`Improvements[1]`）。
+  - 读档（`HydrateCity`）旧码：`bit[improvementNo]` → `rules.Improvements[improvementNo + 1]`，**多加了 1**。于是皇宫被读成兵营，**每座城建筑整体后移一格**。
+- **后果链**：首都丢了皇宫（Capital 效果） → `ComputeDistanceFactor` 认为没有首都 → 全城按“离首都极远”算高腐败 → `Trade = totalTrade − corruption` 压到 1 → `GetScience = 1×60%/100 = 0`（整数截断） → 全图科研归零。这条 bug 一直被第 18 节那个读档崩溃盖着（以前根本读不进来），崩溃修好后才暴露。
+- **修复**：`HydrateCity` 读档索引去掉 `+1`，与存档一致（`improvementNo` 从 1 起、`rules.Improvements[improvementNo]`）。
+- **回归测试**：`Core.Tests/SaveLoad/GameSerializerTests.cs` 给城市加皇宫（索引 1），断言读回仍是皇宫、未错位成兵营（索引 2）（还原必败、修复通过）。
+
+## 27. 脚本按工作目录查找 → 从非 bin 目录启动则改良效果全失（第六轮，治本）
+
+- **现象**：即使第 26 节修好、皇宫正确加载，首都腐败仍是 3、`hasCapital=False`。诊断显示 `Rules.Improvements[1].EffectsCount=0`——**皇宫对象身上一个效果都没有**。
+- **根因**：改良的**效果**（皇宫 Capital、各种 Multiplier）是 `improvements.lua` 运行时挂上去的;而 `ScriptEngine` 只用 `Environment.CurrentDirectory + "/Scripts"` 找脚本。脚本实际在 `bin/Debug/net9.0/Scripts/`，**从仓库根目录启动游戏时 CWD≠bin → 脚本全部 “not found” → 改良效果全没加** → 皇宫没有 Capital 效果 → 首都腐败 → 科研 0。（DEV_NOTES §0 本就要求从 bin 目录启动，是启动方式陷阱。）
+- **治本修复**：`Engine/src/Scripting/ScriptEngine.cs` 在脚本搜索路径里**加上 `AppContext.BaseDirectory + "Scripts"`**（程序集所在目录 = bin/Scripts），不再只依赖 CWD。现在从任意目录启动脚本都能找到。验证：从仓库根目录启动读档，日志里 `*.lua not found` = 0;首都 `corruption=0 trade=4 science=2 hasCapital=True`。
+
+## 28. 第六轮改动文件清单
+
+- `Model/Controls/Menu/Shortcut.cs` —— `Shortcut` 增加 `Alt` 支持
+- `RaylibUI/RunGame/GameScreen.cs` —— OnKeyPress 检测 Alt、去掉 Alt 聚焦菜单早退
+- `RaylibUI/RunGame/GameModes/MovingPieces.cs` —— Alt+←/→ 斜向（Ctrl 保留为后备）
+- `Engine/src/Production/ProductionCabalilities.cs` —— 过期判断兼容裁短 Advances（造军队修复）
+- `Engine/src/SaveLoad/GameSerializer.cs` —— `PadAdvances` 补齐 Advances + 改良索引去掉 `+1`
+- `RaylibUI/RunGame/GameControls/Advisors/ScienceAdvisorWindow.cs` —— Advances 越界防御 + `ReseachingAdvance` 范围判断
+- `Engine/src/Scripting/ScriptEngine.cs` —— 脚本搜索路径加 `AppContext.BaseDirectory`
+- `Core.Tests/Production/ProductionListTests.cs`（新增）—— 裁短 Advances 下单位可造回归
+- `Core.Tests/SaveLoad/GameSerializerTests.cs` —— 改良不错位 + ExtendedData round-trip 回归
+
+## 29. 仍未解决 / 待办（第六轮）
+
+- **`CalculateAvailableResearch` 的预存 bug**（`Engine/src/AdvanceFunctions.cs:216`）：`HasTech(...Prereq1) && HasTech(...Prereq1)` 把前置 1 检查了两遍、**前置 2 从没检查** → 某些本该需要双前置的科技会提前可研究。本轮未改（怕影响科技树平衡），待定。
+- 科研“产出整数截断”仍在（贸易低的城每回合 0 beaker），属原版机制范畴，未改舍入。
+- `ViewPiece`（查看模式）光标移动仍不支持 Shift/Alt 斜向（按 `Key` 查表、不读修饰键），承第 17 节。
+- “单位瞬间移动”用户曾报告，疑为脚本未加载（units.lua / AI 脚本）连带，第 27 节修复后应消失，待用户最终确认。
+
+## 30. 更多需要新机制的奇观（第七轮）
+
+接着 §21 / §22，把还能干净接入现有系统的奇观逐个做掉（每个都核实原版数值、构建 0 错误、118 测试通过）：
+
+- **Great Wall（45）**：每城等同城墙。`UnitExtensions` 战斗里城墙防御改为读 `EffectImprovements` 并**取最大值**（而非求和），这样长城与真城墙**不叠加**;lua 标 CivWide + `Walled 200`。
+- **Lighthouse（42）**：全文明造老兵海军 → CivWide + `Veteran = UnitDomain.Sea`。
+- **Sun Tzu's War Academy（46）**：全文明所有新单位都是老兵 → CivWide + `Veteran = -1`（哨兵值=全域）;`UnitProductionOrder` 老兵判定改读 `EffectImprovements`、并接受 `-1`。`AxxExtensions` 加 `UnitDomain.All = -1`。
+- **Adam Smith's Trading Co.（56）**：替全文明付每座“维护费 ≤ 1”建筑的金币 → `GameTurn` 维护费循环里，若该文明有亚当斯密且 `Upkeep <= 1` 则跳过扣费。
+- **King Richard's Crusade（47，本城）**：本城每块工作地块 +1 护盾 → 生产算式里 `totalSheilds += city.WorkedTiles.Count`（在护盾倍率之前）。
+- **Colossus（41，本城）**：本城每块已产贸易的地块 +1 贸易 → 生产算式地块循环里，有巨像则产贸易地块各 +1。
+- **Magellan's Expedition（51）**：全文明海军 +2 格移动 → `Unit.MaxMovePoints` 对海军 + 6 点（=2 格 × MGE 标准 `MovementMultiplier`=3;Model 层拿不到该倍率，按 MGE 硬编码并注释）。
+- **Great Library（43）**：每回合获得一项“≥2 个其它文明已知、自己没有”的科技 → `GameTurn` 每文明每回合调 `GrantGreatLibraryAdvance`，扫 `game.AllCivilizations` 计数后 `GiveAdvance`（一回合最多一项）。
+
+**仍未做（需先建当前不存在的子系统，属“实现整套机制”而非“填奇观数据”，故不塞半成品）**：
+
+| 奇观 | 缺的子系统 |
+|---|---|
+| 自由女神像 | 政府切换的“无政府”机制（现在换政府是直接赋值，无可免） |
+| 女权运动 | 驻军/军事不满模型（幸福算式根本没这一项） |
+| 曼哈顿计划 | 核武的可用性门控（现在不由奇观决定） |
+| 马可波罗大使馆 / 联合国 | 外交 / 大使馆系统（游戏内无实际外交玩法） |
+| 埃菲尔铁塔 | 声望 / AI 态度系统（`Attitude` 存在但玩法未用） |
+| 列奥纳多工坊 | 单位升级逻辑 + 单位“被谁取代”数据（均无） |
+
+这些每个都是一块独立的游戏机制开发，不是改 lua 能解决的;要做需各自立项。

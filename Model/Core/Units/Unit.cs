@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Linq;
+using System.Text;
 using Civ2engine.Enums;
 using Model.Constants;
 using Model.Core.Cities;
@@ -29,7 +30,11 @@ namespace Model.Core.Units
 
         public int UntilTech => TypeDefinition.Until;
         public UnitGas Domain => TypeDefinition.Domain;
-        public int MaxMovePoints => TypeDefinition.Move;
+        // Magellan's Expedition gives every naval unit +2 tiles of movement. Move is stored in
+        // points (tiles x the standard MovementMultiplier of 3 for MGE), so +2 tiles = +6 points.
+        public int MaxMovePoints => TypeDefinition.Move +
+            (Domain == UnitGas.Sea && Owner != null &&
+             Owner.Cities.Any(c => c.Improvements.Any(i => i.Name == "Magellan's Expedition")) ? 6 : 0);
         public int FuelRange => TypeDefinition.Range;
         public int AttackBase => TypeDefinition.Attack;
         public int DefenseBase => TypeDefinition.Defense;

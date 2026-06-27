@@ -1,6 +1,7 @@
 ﻿using System.Linq;
 using Civ2engine.Advances;
 using Civ2engine.Production;
+using Model.Core;
 using Model.Core.Player;
 
 namespace Civ2engine
@@ -189,6 +190,33 @@ namespace Civ2engine
                     player.NotifyAdvanceResearched(activeCiv.ReseachingAdvance);
                     game.GiveAdvance(activeCiv.ReseachingAdvance, activeCiv);
                     activeCiv.Science -= currentScienceCost;
+                }
+
+                // Great Library: each turn, gain one advance that at least two other civs know.
+                if (activeCiv.Cities.Any(c => c.Improvements.Any(i => i.Name == "Great Library")))
+                {
+                    GrantGreatLibraryAdvance(game, activeCiv, player);
+                }
+            }
+        }
+
+        // Grants the civ one advance that is already known by at least two other civilizations.
+        private static void GrantGreatLibraryAdvance(Game game, Civilization civ, IPlayer player)
+        {
+            for (var adv = 0; adv < game.Rules.Advances.Length; adv++)
+            {
+                if (adv < civ.Advances.Length && civ.Advances[adv])
+                {
+                    continue;
+                }
+
+                var othersKnowing = game.AllCivilizations.Count(c =>
+                    c != civ && adv < c.Advances.Length && c.Advances[adv]);
+                if (othersKnowing >= 2)
+                {
+                    player.NotifyAdvanceResearched(adv);
+                    game.GiveAdvance(adv, civ);
+                    return; // at most one advance per turn
                 }
             }
         }
