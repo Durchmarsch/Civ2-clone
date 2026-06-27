@@ -268,3 +268,21 @@
 - 科研“产出整数截断”本身仍在（贸易低的城每回合 0 beaker，§15 只解决了“能选科技”，没改产出舍入）；是否要改舍入方式待定。
 - `Climate` / `Temperature` / `Age` 仍未接入地图生成（承 §12 / §13）。
 - 单城单弹窗偶发卡死（承第二轮 §9 末）尚未复现定位。
+
+## 21. 需要新机制的奇观（第五轮）
+
+- **背景**：§10 只填了能映射到现有 `Effects` 枚举的奇观；这一轮做“现有效果体系表达不了、需要专门机制”的几个。先摸清引擎可用钩子（`game.GiveAdvance`、`Map.MapRevealed`、`AdvanceFunctions.CalculateAvailableResearch`、`Game.Random`）后实现。
+- **持续型（仍走 lua + CivWide 框架，本轮新增）**：
+  - SETI Program（索引 65）：每城等同研究所 → `ScienceMultiplier 50` + CivWide。
+  - Cure for Cancer（66）：每城 +1 → 近似为 `ContentFace 1` + CivWide（幸福模型只处理 content，不处理 happy face）。
+- **一次性 on-build 型（新机制）**：新增 `Engine/src/WonderEffects.cs` 的 `ApplyOnBuild(game, city, wonder)`，在 `GameTurn` 里某座城完成生产、且产出是奇观时触发，按奇观**名字**分派（与 MGE/ToT 索引解耦）：
+  - **Apollo Program**：`game.Maps[].MapRevealed = true` —— 揭示全地图。
+  - **Darwin's Voyage**：用 `CalculateAvailableResearch` 取当前可研究科技、随机给 2 个 → `GiveAdvance`。
+- **接入点**：`GameTurn.cs` 的 `CompleteProduction` 成功分支里加 `if (ItemInProduction is BuildingProductionOrder { Improvement.IsWonder: true } wonder) WonderEffects.ApplyOnBuild(...)`。
+- **仍未做（依赖尚不存在的子系统，工作量大）**：
+  - **外交 / 大使馆**（马可波罗、埃菲尔铁塔、联合国）—— 无外交系统。
+  - **单位升级**（列奥纳多工坊）—— 无升级逻辑。
+  - **军事不满 / 戒严**（女权运动）—— 幸福模型未建模驻军不满，无可减项。
+  - **生产倍率 / 大陆范围**（胡佛大坝、王理查的十字军、巴赫教堂）—— 无护盾倍率效果、无“大陆”范围。
+  - **科研建筑翻倍**（牛顿学院、神谕）—— 现加法模型表达不了“翻倍某些建筑”，需在算式里特判。
+  - 这些每个都要先建对应子系统，建议后续按子系统逐个推进，避免塞入半成品。

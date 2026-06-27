@@ -125,6 +125,11 @@ namespace Civ2engine
                 {
                     if (city.ItemInProduction.CompleteProduction(city, rules))
                     {
+                        if (city.ItemInProduction is BuildingProductionOrder { Improvement: { IsWonder: true } wonder })
+                        {
+                            WonderEffects.ApplyOnBuild(game, city, wonder);
+                        }
+
                         city.ShieldsProgress = 0;
                         player.CityProductionComplete(city);
                     }
@@ -150,21 +155,44 @@ namespace Civ2engine
                     }
                 }
 
+                // Accumulate this city's research output (may be 0 for low-trade cities).
                 if (science > 0)
                 {
                     activeCiv.Science += science;
-                    if (activeCiv.ReseachingAdvance < 0)
+                }
+            }
+
+            // Research target / completion is handled once per civ per turn, NOT per city.
+            // Only civs with at least one city can research (this also skips the barbarian
+            // "civ", which has no cities and no AllowedAdvanceGroups set up):
+            //  - If we have no research target, prompt for one. This must NOT be gated on this
+            //    turn's science output, otherwise a civ whose cities each produce 0 beakers
+            //    (e.g. 1 trade * 60% truncates to 0) would never be asked to pick research.
+            //  - Otherwise, once enough beakers have accumulated, complete the advance.
+            if (activeCiv.Cities.Count > 0)
+            {
+                // DIAGNOSTIC (research-stopped investigation) -- remove after diagnosis
+                if (activeCiv == game.GetPlayerCiv)
+                {
+                    var poss = AdvanceFunctions.CalculateAvailableResearch(game, activeCiv).Count;
+                    System.Console.WriteLine($"[RESDIAG] researching={activeCiv.ReseachingAdvance} science={activeCiv.Science} cost={currentScienceCost} possibilities={poss}");
+                }
+
+                if (activeCiv.ReseachingAdvance < 0)
+                {
+                    var researchPossibilities = AdvanceFunctions.CalculateAvailableResearch(game, activeCiv);
+                    if (researchPossibilities.Count > 0)
                     {
-                        var researchPossibilities = AdvanceFunctions.CalculateAvailableResearch(game, activeCiv);
+                        System.Console.WriteLine($"[RESDIAG] -> SelectNewAdvance ({researchPossibilities.Count} options)"); // DIAGNOSTIC
                         player.SelectNewAdvance(researchPossibilities);
-                        currentScienceCost = AdvanceFunctions.CalculateScienceCost(game, activeCiv);
                     }
-                    else if (currentScienceCost <= activeCiv.Science)
-                    {
-                        player.NotifyAdvanceResearched(activeCiv.ReseachingAdvance);
-                        game.GiveAdvance(activeCiv.ReseachingAdvance, activeCiv);
-                        activeCiv.Science -= currentScienceCost;
-                    }
+                }
+                else if (currentScienceCost > 0 && currentScienceCost <= activeCiv.Science)
+                {
+                    System.Console.WriteLine($"[RESDIAG] -> COMPLETE advance {activeCiv.ReseachingAdvance}"); // DIAGNOSTIC
+                    player.NotifyAdvanceResearched(activeCiv.ReseachingAdvance);
+                    game.GiveAdvance(activeCiv.ReseachingAdvance, activeCiv);
+                    activeCiv.Science -= currentScienceCost;
                 }
             }
         }

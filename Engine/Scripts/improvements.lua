@@ -99,3 +99,12 @@ civ.getImprovement(50).Effects.Add(civ.core.Effects.ScienceMultiplier, 100)
 --Shakespeare's Theatre (52): no unhappiness in its own city (all unhappy made content).
 -- Modelled as a large local ContentFace; the enum has no "make all content" effect.
 civ.getImprovement(52).Effects.Add(civ.core.Effects.ContentFace, 30)
+
+--SETI Program (65): acts as a Research Lab in every city (+50% science, civ-wide).
+civ.getImprovement(65).CivWide = true
+civ.getImprovement(65).Effects.Add(civ.core.Effects.ScienceMultiplier, 50)
+
+--Cure for Cancer (66): +1 happy citizen in every city of the civilization.
+-- Modelled as civ-wide ContentFace (the happiness model applies content, not happy faces).
+civ.getImprovement(66).CivWide = true
+civ.getImprovement(66).Effects.Add(civ.core.Effects.ContentFace, 1)
