@@ -89,6 +89,10 @@ civ.getImprovement(39).Effects.Add(civ.core.Effects.FoodStorage, 50)
 civ.getImprovement(40).CivWide = true
 civ.getImprovement(40).Effects.Add(civ.core.Effects.ContentFace, 1)
 
+--Oracle (44): doubles the Temple content effect in every city. CivWide marker only;
+-- the actual doubling is applied in code (CityExtensions happiness calc).
+civ.getImprovement(44).CivWide = true
+
 --Michelangelo's Chapel (49): acts as a Cathedral in every city of the civilization.
 civ.getImprovement(49).CivWide = true
 civ.getImprovement(49).Effects.Add(civ.core.Effects.ContentFace, 3)

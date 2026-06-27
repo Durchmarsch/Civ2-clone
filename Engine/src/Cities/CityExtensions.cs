@@ -373,9 +373,12 @@ namespace Civ2engine
             additUnhappy -=
                 Math.Min(city.Location.UnitsHere.Count, 3); // Each new unit in city -> 1 less unhappy (up to 3 max)
 
+            // The Oracle doubles the content provided by Temples in every city of the civ.
+            var oracleActive = city.EffectImprovements().Any(i => i.Name == "Oracle");
             var contentImprovements = city.EffectImprovements().Where(i => i.Effects.ContainsKey(Effects.ContentFace));
 
-            additUnhappy -= contentImprovements.Sum(i => i.Effects.GetValueOrDefault(Effects.ContentFace));
+            additUnhappy -= contentImprovements.Sum(i =>
+                i.Effects.GetValueOrDefault(Effects.ContentFace) * (oracleActive && i.Name == "Temple" ? 2 : 1));
             // TODO: Adjustments to colosseum & cathedral for Tech
             // if (city.Improvements.Any(impr => impr.Type == ImprovementType.Temple)) additUnhappy -= 2;
             // if (city.Improvements.Any(impr => impr.Type == ImprovementType.Colosseum)) additUnhappy -= 3;

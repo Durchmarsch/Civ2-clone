@@ -279,10 +279,13 @@
   - **Apollo Program**：`game.Maps[].MapRevealed = true` —— 揭示全地图。
   - **Darwin's Voyage**：用 `CalculateAvailableResearch` 取当前可研究科技、随机给 2 个 → `GiveAdvance`。
 - **接入点**：`GameTurn.cs` 的 `CompleteProduction` 成功分支里加 `if (ItemInProduction is BuildingProductionOrder { Improvement.IsWonder: true } wonder) WonderEffects.ApplyOnBuild(...)`。
+- **科研 / 幸福“翻倍”型（在算式里特判，本轮新增）**：
+  - **Isaac Newton's College（55）**：本城科研建筑加成翻倍。`CityResourcesExtensions.GetScience` 里，若本城（`EffectImprovements` 含牛顿）则把科研倍率的“加成部分”翻倍（`multiplier += multiplier - 1`）。
+  - **Oracle（44）**：每城庙宇满意效果翻倍（庙宇 ContentFace 2 → 4）。lua 标 `CivWide`（仅作标记、无直接效果）,`CityExtensions` 幸福算式里检测到本城 `EffectImprovements` 含 Oracle 时，把名为 `Temple` 的改良 ContentFace 乘 2。
+  - 备注：原版 Oracle 在研究出“神学”后失效;本 clone 无奇观失效机制，暂不失效。
 - **仍未做（依赖尚不存在的子系统，工作量大）**：
   - **外交 / 大使馆**（马可波罗、埃菲尔铁塔、联合国）—— 无外交系统。
   - **单位升级**（列奥纳多工坊）—— 无升级逻辑。
   - **军事不满 / 戒严**（女权运动）—— 幸福模型未建模驻军不满，无可减项。
   - **生产倍率 / 大陆范围**（胡佛大坝、王理查的十字军、巴赫教堂）—— 无护盾倍率效果、无“大陆”范围。
-  - **科研建筑翻倍**（牛顿学院、神谕）—— 现加法模型表达不了“翻倍某些建筑”，需在算式里特判。
   - 这些每个都要先建对应子系统，建议后续按子系统逐个推进，避免塞入半成品。

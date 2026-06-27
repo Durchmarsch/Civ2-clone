@@ -22,7 +22,14 @@ public static class CityResourcesExtensions
 
     public static int GetScience(this City city)
     {
-        return (int)(city.GetBaseScience() * city.GetMultiplier(Effects.ScienceMultiplier));
+        var multiplier = city.GetMultiplier(Effects.ScienceMultiplier);
+        // Isaac Newton's College doubles the science bonus from buildings in its city.
+        if (city.EffectImprovements().Any(i => i.Name == "Isaac Newton's College"))
+        {
+            multiplier += multiplier - 1m;
+        }
+
+        return (int)(city.GetBaseScience() * multiplier);
     }
 
     private static int GetBaseLuxury(this City city)
