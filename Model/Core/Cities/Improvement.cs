@@ -1,0 +1,32 @@
+﻿using Civ2engine;
+using Model.Constants;
+using Model.Images;
+
+namespace Model.Core.Cities;
+
+public class Improvement
+{
+    public int Type { get; set; }
+
+    //From RULES.TXT
+    public string Name { get; set; }
+
+    public int Cost { get; set; }
+    public int Upkeep { get; set; }
+    public int Prerequisite { get; set; }
+
+    public int ExpiresAt { get; set; } = -1;
+    
+    public bool IsWonder { get; set; }
+
+    /// <summary>
+    /// When true this improvement's <see cref="Effects"/> apply to every city of the owning
+    /// civilization, not just the city that contains it (e.g. civ-wide wonders such as the
+    /// Hanging Gardens). Set from improvements.lua.
+    /// </summary>
+    public bool CivWide { get; set; }
+
+    public Dictionary<Effects,int> Effects { get; } = new ();
+    public List<CityTerrainEffect> TerrainEffects { get; set; } = new();
+    public IImageSource? Icon { get; set; }
+}

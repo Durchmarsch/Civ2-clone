@@ -1,0 +1,971 @@
+﻿using Civ2;
+using Civ2engine;
+using Civ2engine.IO;
+using JetBrains.Annotations;
+using Model;
+using Model.Images;
+using Model.ImageSets;
+using Model.Input;
+using Model.Interface;
+using Model.Controls;
+using Model.Core.GameRules;
+using Raylib_CSharp.Textures;
+using Raylib_CSharp.Transformations;
+using Model.Utils;
+using Raylib_CSharp.Colors;
+using Raylib_CSharp.Images;
+using Raylib_CSharp.Rendering;
+using RaylibUtils;
+using static Model.Controls.CommandIds;
+
+namespace Civ2Gold;
+
+[UsedImplicitly]
+public class Civ2GoldInterface(IMain main) : Civ2Interface(main)
+{
+    public override string Title => "Civilization II Multiplayer Gold";
+
+    public override string InitialMenu => "MAINMENU";
+
+    public override InterfaceStyle Look { get; } = new()
+    {
+        Outer = new BitmapStorage("ICONS", new Rectangle(199, 322, 64, 32)),
+        Inner = [new BitmapStorage("ICONS", new Rectangle(298, 190, 32, 32))],
+
+        RadioButtons = [new BitmapStorage("buttons.png", 0, 0, 32), new BitmapStorage("buttons.png", 32, 0, 32)],
+        CheckBoxes = [new BitmapStorage("buttons.png", 0, 32, 32), new BitmapStorage("buttons.png", 32, 32, 32)],
+        DiskIcons = [new BitmapStorage("explorer_icons.png", 0, 0, 32), new BitmapStorage("explorer_icons.png", 32, 0, 32),
+          new BitmapStorage("explorer_icons.png", 64, 0, 32), new BitmapStorage("explorer_icons.png", 0, 32, 32),
+          new BitmapStorage("explorer_icons.png", 32, 32, 32), new BitmapStorage("explorer_icons.png", 64, 32, 32)],
+
+        DefaultFont = Fonts.Tnr,
+        ButtonFont = Fonts.Tnr,
+        ButtonFontSize = 20,
+        ButtonColour = Color.Black,
+        HeaderLabelFont = Fonts.TnRbold,
+        HeaderLabelFontSizeNormal = 28,
+        HeaderLabelFontSizeLarge = 34,
+        CityHeaderLabelFontSizeNormal = 18,
+        CityHeaderLabelFontSizeLarge = 28,
+        CityHeaderLabelFontSizeSmall = 16,
+        HeaderLabelShadow = true,
+        HeaderLabelColour = new Color(135, 135, 135, 255),
+        LabelFont = Fonts.Tnr,
+        LabelFontSize = 27,
+        LabelColour = new Color(51, 51, 51, 255),
+        LabelShadowColour = new Color(191, 191, 191, 255),
+        CityWindowFont = Fonts.Arial,
+        CityWindowFontSize = 14,  // small=6, normal=14, large=20
+        MenuFont = Fonts.Arial,
+        MenuFontSize = 14,
+        CivilopediaFontSize = 22,
+        StatusPanelLabelFont = Fonts.TnRbold,
+        StatusPanelLabelColor = new Color(51, 51, 51, 255),
+        StatusPanelLabelColorShadow = new Color(191, 191, 191, 255),
+        MovingUnitsViewingPiecesLabelColor = Color.White,
+        MovingUnitsViewingPiecesLabelColorShadow = Color.Black,
+        EndOfTurnColors = [new Color(135, 135, 135, 255), Color.White],
+    };
+
+    public override bool IsButtonInOuterPanel => true;
+    
+    public override Padding GetPadding(float headerLabelHeight, bool footer)
+    {
+        var paddingTop = headerLabelHeight != 0 ? 7 + Math.Max((int)(-3 + 2 / 9f * headerLabelHeight + headerLabelHeight), (int)headerLabelHeight) : 11;
+        var paddingBtm = footer ? 46 : 10;
+
+        return new Padding(paddingTop, bottom:paddingBtm, left:11, right:11);
+    }
+
+    public override Padding DialogPadding => new(11);
+
+    public override void Initialize()
+    {
+        base.Initialize();
+
+        PicSources.Add("unit",
+            Enumerable.Range(0, 9 * UnitsRows).Select(i => new BitmapStorage("UNITS",
+                new Rectangle(1 + 65 * (i % 9), 1 + (UnitsPxHeight + 1) * (i / 9), 64, UnitsPxHeight),
+                searchFlagLoc: true)).ToArray<IImageSource>());
+        PicSources.Add("HPshield", [new BitmapStorage("UNITS", new Rectangle(597, 30, 12, 20))]);
+        PicSources.Add("backShield1", [new BitmapStorage("UNITS", new Rectangle(586, 1, 12, 20))]);
+        PicSources.Add("backShield2", [new BitmapStorage("UNITS", new Rectangle(599, 1, 12, 20))]);
+        PicSources.Add("textColours", Enumerable.Range(0, 9).Select(col =>
+            new BitmapStorage("CITIES", new Rectangle(1 + 15 * col, 423, 14, 1))).ToArray<IImageSource>());
+        PicSources.Add("flags", Enumerable.Range(0, 2 * 9).Select(i =>
+                new BitmapStorage("CITIES", new Rectangle(1 + 15 * (i % 9), 425 + 23 * (i / 9), 14, 22)))
+            .ToArray<IImageSource>());
+        PicSources.Add("fortify", [new BitmapStorage("CITIES", new Rectangle(143, 423, 64, 48))]);
+        PicSources.Add("fortress", [new BitmapStorage("CITIES", new Rectangle(208, 423, 64, 48))]);
+        PicSources.Add("airbase,empty", [new BitmapStorage("CITIES", new Rectangle(273, 423, 64, 48))]);
+        PicSources.Add("airbase,full", [new BitmapStorage("CITIES", new Rectangle(338, 423, 64, 48))]);
+        PicSources.Add("base1", Enumerable.Range(0, 11).Select(row =>
+            new BitmapStorage("TERRAIN1", new Rectangle(1, 1 + 33 * row, 64, 32))).ToArray<IImageSource>());
+        PicSources.Add("base2", Enumerable.Range(0, 11).Select(row =>
+            new BitmapStorage("TERRAIN1", new Rectangle(66, 1 + 33 * row, 64, 32))).ToArray<IImageSource>());
+        PicSources.Add("special1", Enumerable.Range(0, 11).Select(row =>
+            new BitmapStorage("TERRAIN1", new Rectangle(131, 1 + 33 * row, 64, 32))).ToArray<IImageSource>());
+        PicSources.Add("special2", Enumerable.Range(0, 11).Select(row =>
+            new BitmapStorage("TERRAIN1", new Rectangle(196, 1 + 33 * row, 64, 32))).ToArray<IImageSource>());
+        PicSources.Add("road", Enumerable.Range(0, 9).Select(col =>
+            new BitmapStorage("TERRAIN1", new Rectangle(1 + 65 * col, 363, 64, 32))).ToArray<IImageSource>());
+        PicSources.Add("railroad", Enumerable.Range(0, 9).Select(col =>
+            new BitmapStorage("TERRAIN1", new Rectangle(1 + 65 * col, 397, 64, 32))).ToArray<IImageSource>());
+        PicSources.Add("irrigation", [new BitmapStorage("TERRAIN1", new Rectangle(456, 100, 64, 32))]);
+        PicSources.Add("farmland", [new BitmapStorage("TERRAIN1", new Rectangle(456, 133, 64, 32))]);
+        PicSources.Add("mine", [new BitmapStorage("TERRAIN1", new Rectangle(456, 166, 64, 32))]);
+        PicSources.Add("pollution", [new BitmapStorage("TERRAIN1", new Rectangle(456, 199, 64, 32))]);
+        PicSources.Add("shield", [new BitmapStorage("TERRAIN1", new Rectangle(456, 232, 64, 32))]);
+        PicSources.Add("hut", [new BitmapStorage("TERRAIN1", new Rectangle(456, 265, 64, 32))]);
+        PicSources.Add("dither", [new BitmapStorage("TERRAIN1", new Rectangle(1, 447, 64, 32))]);
+        PicSources.Add("blank", [new BitmapStorage("TERRAIN1", new Rectangle(131, 447, 64, 32))]);
+        PicSources.Add("connection", Enumerable.Range(0, 2 * 8).Select(i =>
+                new BitmapStorage("TERRAIN2", new Rectangle(1 + 65 * (i % 8), 1 + 33 * (i / 8), 64, 32)))
+            .ToArray<IImageSource>());
+        PicSources.Add("river", Enumerable.Range(0, 2 * 8).Select(i =>
+                new BitmapStorage("TERRAIN2", new Rectangle(1 + 65 * (i % 8), 67 + 33 * (i / 8), 64, 32)))
+            .ToArray<IImageSource>());
+        PicSources.Add("forest", Enumerable.Range(0, 2 * 8).Select(i =>
+                new BitmapStorage("TERRAIN2", new Rectangle(1 + 65 * (i % 8), 133 + 33 * (i / 8), 64, 32)))
+            .ToArray<IImageSource>());
+        PicSources.Add("mountain", Enumerable.Range(0, 2 * 8).Select(i =>
+                new BitmapStorage("TERRAIN2", new Rectangle(1 + 65 * (i % 8), 199 + 33 * (i / 8), 64, 32)))
+            .ToArray<IImageSource>());
+        PicSources.Add("hill", Enumerable.Range(0, 2 * 8).Select(i =>
+                new BitmapStorage("TERRAIN2", new Rectangle(1 + 65 * (i % 8), 265 + 33 * (i / 8), 64, 32)))
+            .ToArray<IImageSource>());
+        PicSources.Add("riverMouth", Enumerable.Range(0, 4).Select(col =>
+            new BitmapStorage("TERRAIN2", new Rectangle(1 + 65 * col, 331, 64, 32))).ToArray<IImageSource>());
+        PicSources.Add("viewPiece", [new BitmapStorage("ICONS", new Rectangle(199, 256, 64, 32))]);
+        PicSources.Add("gridlines", [new BitmapStorage("ICONS", new Rectangle(183, 430, 64, 32))]);
+        PicSources.Add("gridlines,visible", [new BitmapStorage("ICONS", new Rectangle(248, 430, 64, 32))]);
+        PicSources.Add("battleAnim", Enumerable.Range(0, 8).Select(col =>
+            new BitmapStorage("ICONS", new Rectangle(1 + 33 * col, 356, 32, 32))).ToArray<IImageSource>());
+        PicSources.Add("researchProgress", Enumerable.Range(0, 4).Select(col =>
+            new BitmapStorage("ICONS", new Rectangle(49 + 15 * col, 290, 14, 14))).ToArray<IImageSource>());
+        PicSources.Add("globalWarming", Enumerable.Range(0, 4).Select(col =>
+            new BitmapStorage("ICONS", new Rectangle(49 + 15 * col, 305, 14, 14))).ToArray<IImageSource>());
+        PicSources.Add("advanceCategories", Enumerable.Range(0, 5 * 4).Select(i =>
+            new BitmapStorage("ICONS", new Rectangle(343 + 37 * (i % 5), 211 + 21 * (i / 5), 36, 20))).ToArray<IImageSource>());
+        PicSources.Add("close", [new BitmapStorage("ICONS", new Rectangle(1, 389, 16, 16))]);
+        PicSources.Add("zoomIn", [new BitmapStorage("ICONS", new Rectangle(18, 389, 16, 16))]);
+        PicSources.Add("zoomOut", [new BitmapStorage("ICONS", new Rectangle(35, 389, 16, 16))]);
+        PicSources.Add("gold,large", [new BitmapStorage("ICONS", new Rectangle(16, 320, 14, 14))]);
+        PicSources.Add("science,large", [new BitmapStorage("ICONS", new Rectangle(31, 320, 14, 14))]);
+        PicSources.Add("trade,small", [ new BitmapStorage("ICONS", new Rectangle(71, 334, 10, 10))]);
+        PicSources.Add("backgroundImage", [new BinaryStorage("Tiles.dll", 0xF7454, 0x1389D)]);
+        PicSources.Add("backgroundImageSmall1", [
+                new BinaryStorage("Tiles.dll", 0xED354, 0xA0FD, new Rectangle(332, 134, 64, 64))
+            ]
+        );
+        PicSources.Add("backgroundImageSmall2", [
+                new BinaryStorage("Tiles.dll", 0xED354, 0xA0FD, new Rectangle(398, 134, 64, 64))
+            ]
+        );
+        PicSources.Add("cityBuiltAncient", [new BinaryStorage("Tiles.dll", 0xDEDA4, 0x46FF)]);
+        PicSources.Add("cityBuiltModern", [new BinaryStorage("Tiles.dll", 0xE34A4, 0x4A42)]);
+        PicSources.Add("taxRateBack", [new BinaryStorage("Tiles.dll", 0xAB2E8, 0xB271, new Rectangle(0, 0, 600, 384))]);
+        PicSources.Add("cityReport", [new BinaryStorage("Tiles.dll", 0x1E8B0, 0x13A3F, new Rectangle(0, 0, 600, 400))]);
+        PicSources.Add("defenseMinister", [new BinaryStorage("Tiles.dll", 0x322F0, 0xDE6D, new Rectangle(0, 0, 600, 400))]);
+        PicSources.Add("attitudeAdvisor", [new BinaryStorage("Tiles.dll", 0x4CB3C, 0xCDFA, new Rectangle(0, 0, 600, 400))]);
+        PicSources.Add("tradeAdvisor", [new BinaryStorage("Tiles.dll", 0x59938, 0xD878, new Rectangle(0, 0, 600, 400))]);
+        PicSources.Add("scienceAdvisor", [new BinaryStorage("Tiles.dll", 0x671B0, 0xCFD2, new Rectangle(0, 0, 600, 400))]);
+        PicSources.Add("worldWonders", [new BinaryStorage("Tiles.dll", 0x74184, 0x77E6, new Rectangle(0, 0, 600, 400))]);
+        PicSources.Add("sinaiPic", [new BinaryStorage("Intro.dll", 0x1E630, 0x9F78)]);
+        PicSources.Add("stPeterburgPic", [new BinaryStorage("Intro.dll", 0x285A8, 0x15D04)]);
+        PicSources.Add("desertPic", [new BinaryStorage("Intro.dll", 0xD0140, 0xA35A)]);
+        PicSources.Add("snowPic", [new BinaryStorage("Intro.dll", 0xE2E1C, 0xA925)]);
+        PicSources.Add("canyonPic", [new BinaryStorage("Intro.dll", 0xC51B8, 0xAF88)]);
+        PicSources.Add("mingGeneralPic", [new BinaryStorage("Intro.dll", 0x3E2AC, 0x1D183)]);
+        PicSources.Add("islandPic", [new BinaryStorage("Intro.dll", 0xDA49C, 0x8980)]);
+        PicSources.Add("ancientPersonsPic", [new BinaryStorage("Intro.dll", 0x5B430, 0x15D04)]);
+        PicSources.Add("barbariansPic", [new BinaryStorage("Intro.dll", 0x71134, 0x13D5B)]);
+        PicSources.Add("galleyPic", [new BinaryStorage("Intro.dll", 0xB6A3C, 0xE77A)]);
+        PicSources.Add("peoplePic1", [new BinaryStorage("Intro.dll", 0x84E90, 0x129CE)]);
+        PicSources.Add("peoplePic2", [new BinaryStorage("Intro.dll", 0x97860, 0x139A0)]);
+        PicSources.Add("templePic", [new BinaryStorage("Intro.dll", 0xAB200, 0xB839)]);
+        PicSources.Add("people", Enumerable.Range(0, 11 * 4).Select(i =>
+                        new BitmapStorage("PEOPLE", new Rectangle(2 + 28 * (i % 11), 6 + 31 * (i / 11), 27, 30))).ToArray<IImageSource>());
+
+        var src = new IImageSource[6 * 8];
+        for (var row = 0; row < 6; row++)
+        {
+            for (var col = 0; col < 4; col++)
+            {
+                src[8 * row + col] = new BitmapStorage("CITIES", new Rectangle(1 + 65 * col, 39 + 49 * row, 64, 48),
+                    searchFlagLoc: true); // Open cities
+                src[8 * row + 4 + col] = new BitmapStorage("CITIES",
+                    new Rectangle(334 + 65 * col, 39 + 49 * row, 64, 48), searchFlagLoc: true); // Walled cities
+            }
+        }
+
+        PicSources.Add("city", src);
+
+        src = new IImageSource[4 * 8];
+        for (var i = 0; i < 8; i++)
+        {
+            src[4 * i + 0] = new BitmapStorage("TERRAIN2", new Rectangle(1 + 66 * i, 429, 32, 16));
+            src[4 * i + 1] = new BitmapStorage("TERRAIN2", new Rectangle(1 + 66 * i, 446, 32, 16));
+            src[4 * i + 2] = new BitmapStorage("TERRAIN2", new Rectangle(1 + 66 * i, 463, 32, 16));
+            src[4 * i + 3] = new BitmapStorage("TERRAIN2", new Rectangle(34 + 66 * i, 463, 32, 16));
+        }
+
+        PicSources.Add("coastline", src);
+
+        PicSources.Add("trBase", [new BinaryStorage("pv.dll", 0x1EFA0, 0x20A3E)]);
+        PicSources.Add("trWallBack", [new BinaryStorage("pv.dll", 0x3F9E0, 0x122EE), 
+            new BinaryStorage("pv.dll", 0x51CD0, 0x122EE), new BinaryStorage("pv.dll", 0x63FC0, 0x9F1D), 
+            new BinaryStorage("pv.dll", 0x6DEE0, 0x964D)]);
+        PicSources.Add("trFloor", [new BinaryStorage("pv.dll", 0x77530, 0xB8FD), 
+            new BinaryStorage("pv.dll", 0x82E30, 0x10162), new BinaryStorage("pv.dll", 0x92F94, 0xB8EB), 
+            new BinaryStorage("pv.dll", 0x9E880, 0xD827)]);
+        PicSources.Add("trRug", [new BinaryStorage("pv.dll", 0xAC0A8, 0x5B1F), 
+            new BinaryStorage("pv.dll", 0xB1BC8, 0x573B), new BinaryStorage("pv.dll", 0xB7304, 0x3429), 
+            new BinaryStorage("pv.dll", 0xBA730, 0x6A9D)]);
+        PicSources.Add("trWallFront", [new BinaryStorage("pv.dll", 0xC11D0, 0x186F1), 
+            new BinaryStorage("pv.dll", 0xD98C4, 0x16AD6), new BinaryStorage("pv.dll", 0xF039C, 0x118B3), 
+            new BinaryStorage("pv.dll", 0x101C50, 0x1785E)]);
+        PicSources.Add("trThroneDecor", [new BinaryStorage("pv.dll", 0x1194B0, 0x3466), 
+            new BinaryStorage("pv.dll", 0x11C918, 0x6D85), new BinaryStorage("pv.dll", 0x1236A0, 0x64D4), 
+            new BinaryStorage("pv.dll", 0x129B74, 0x5592)]);
+        PicSources.Add("trColumnsBack", [new BinaryStorage("pv.dll", 0x12F108, 0x9776),
+            new BinaryStorage("pv.dll", 0x138880, 0x60F3), new BinaryStorage("pv.dll", 0x13E974, 0x61DE), 
+            new BinaryStorage("pv.dll", 0x144B54, 0xC289)]);
+        PicSources.Add("trThrone", [new BinaryStorage("pv.dll", 0x150DE0, 0x2311), 
+            new BinaryStorage("pv.dll", 0x1530F4, 0x1E31), new BinaryStorage("pv.dll", 0x154F28, 0x3137), 
+            new BinaryStorage("pv.dll", 0x158060, 0x1DA0)]);
+        PicSources.Add("trColumnsFront", [new BinaryStorage("pv.dll", 0x159E00, 0x2BA2), 
+            new BinaryStorage("pv.dll", 0x15C9A4, 0x3056), new BinaryStorage("pv.dll", 0x15F9FC, 0x4DBA), 
+            new BinaryStorage("pv.dll", 0x1647B8, 0x5E7D)]);
+        PicSources.Add("trDecorRugs", [new BinaryStorage("pv.dll", 0x16A638, 0x20A8)]);
+        PicSources.Add("trDecorPaintings", [new BinaryStorage("pv.dll", 0x16C6E0, 0x9CEF)]);
+        PicSources.Add("trDecorBushes", [new BinaryStorage("pv.dll", 0x1763D0, 0x1AFE)]);
+        PicSources.Add("trDecorThroneBushes", [new BinaryStorage("pv.dll", 0x177ED0, 0x1EC0)]);
+        PicSources.Add("trDecorPots", [new BinaryStorage("pv.dll", 0x179D90, 0x148C)]);
+        PicSources.Add("trDecorTreasures", [new BinaryStorage("pv.dll", 0x17B21C, 0x29B7)]);
+        PicSources.Add("trDecorStatues", [new BinaryStorage("pv.dll", 0x17DBD4, 0x6CEA)]);
+        PicSources.Add("trWallBack_section", [new BinaryStorage("pv.dll", 0x1848C0, 0x24FB)]);
+        PicSources.Add("trFloor_section", [new BinaryStorage("pv.dll", 0x186DBC, 0x35EA)]);
+        PicSources.Add("trRug_section", [new BinaryStorage("pv.dll", 0x18A3A8, 0xE8F)]);
+        PicSources.Add("trWallFront_section", [new BinaryStorage("pv.dll", 0x18B238, 0x19C3)]);
+        PicSources.Add("trThroneDecor_section", [new BinaryStorage("pv.dll", 0x18CBFC, 0x10EF)]);
+        PicSources.Add("trColumnsBack_section", [new BinaryStorage("pv.dll", 0x18DCEC, 0x47E3)]);
+        PicSources.Add("trThrone_section", [new BinaryStorage("pv.dll", 0x1924D0, 0x822)]);
+        PicSources.Add("trColumnsFront_section", [new BinaryStorage("pv.dll", 0x192CF4, 0x1AD7)]);
+        PicSources.Add("trDecorRugs_section", [new BinaryStorage("pv.dll", 0x1947CC, 0xA0F)]);
+        PicSources.Add("trDecorPaintings_section", [new BinaryStorage("pv.dll", 0x1951DC, 0xF5C)]);
+        PicSources.Add("trDecorBushes_section", [new BinaryStorage("pv.dll", 0x196138, 0xAB0)]);
+        PicSources.Add("trDecorThroneBushes_section", [new BinaryStorage("pv.dll", 0x196BE8, 0xBC4)]);
+        PicSources.Add("trDecorPots_section", [new BinaryStorage("pv.dll", 0x1977AC, 0x901)]);
+        PicSources.Add("trDecorTreasures_section", [new BinaryStorage("pv.dll", 0x1980B0, 0x8E5)]);
+        PicSources.Add("trDecorStatues_section", [new BinaryStorage("pv.dll", 0x198998, 0xFC1)]);
+
+        PicSources.Add("cvOcean", [
+            new BinaryStorage("cv.dll", 0x9D250, 0x45423), 
+            new BinaryStorage("cv.dll", 0xE2674, 0x46642),
+            new BinaryStorage("cv.dll", 0x128CB8, 0x44E6A), 
+            new BinaryStorage("cv.dll", 0x16DB24, 0x44B23)]);
+        PicSources.Add("cvRiver", [
+            new BinaryStorage("cv.dll", 0x1B2648, 0x47B68), 
+            new BinaryStorage("cv.dll", 0x1FA1B0, 0x48F7A),
+            new BinaryStorage("cv.dll", 0x24312C, 0x472FA), 
+            new BinaryStorage("cv.dll", 0x28A428, 0x473B0)]);
+        PicSources.Add("cvContinent", [
+            new BinaryStorage("cv.dll", 0x2D17D8, 0x48D0A), 
+            new BinaryStorage("cv.dll", 0x31A4E4, 0x4A859),
+            new BinaryStorage("cv.dll", 0x364D40, 0x483D5), 
+            new BinaryStorage("cv.dll", 0x3AD118, 0x48FFE)]);
+        PicSources.Add("cvImprovements", [new BinaryStorage("cv.dll", 0x432F0, 0x35C79)]);
+
+        DialogHandlers["MAINMENU"].Dialog.Decorations
+            .Add(new Decoration(PicSources["sinaiPic"][0], new Point(0.08, 0.09)));
+        DialogHandlers["SIZEOFMAP"].Dialog.Decorations
+            .Add(new Decoration(PicSources["stPeterburgPic"][0], new Point(0, 0.09)));
+        DialogHandlers["CUSTOMSIZE"].Dialog.Decorations
+            .Add(new Decoration(PicSources["stPeterburgPic"][0], new Point(0, 0.09)));
+        DialogHandlers["CUSTOMLAND"].Dialog.Decorations
+            .Add(new Decoration(PicSources["stPeterburgPic"][0], new Point(0, 0.09)));
+        DialogHandlers["CUSTOMFORM"].Dialog.Decorations
+            .Add(new Decoration(PicSources["islandPic"][0], new Point(0, 0.09)));
+        DialogHandlers["CUSTOMCLIMATE"].Dialog.Decorations
+            .Add(new Decoration(PicSources["desertPic"][0], new Point(0, 0.09)));
+        DialogHandlers["CUSTOMTEMP"].Dialog.Decorations
+            .Add(new Decoration(PicSources["snowPic"][0], new Point(0, 0.09)));
+        DialogHandlers["CUSTOMAGE"].Dialog.Decorations
+            .Add(new Decoration(PicSources["canyonPic"][0], new Point(0, 0.09)));
+        DialogHandlers["DIFFICULTY"].Dialog.Decorations
+            .Add(new Decoration(PicSources["mingGeneralPic"][0], new Point(-0.08, 0.09)));
+        DialogHandlers["ENEMIES"].Dialog.Decorations
+            .Add(new Decoration(PicSources["ancientPersonsPic"][0], new Point(0.08, 0.09)));
+        DialogHandlers["BARBARITY"].Dialog.Decorations
+            .Add(new Decoration(PicSources["barbariansPic"][0], new Point(-0.08, 0.09)));
+        DialogHandlers["RULES"].Dialog.Decorations
+            .Add(new Decoration(PicSources["galleyPic"][0], new Point(0.08, 0.09)));
+        DialogHandlers["ADVANCED"].Dialog.Decorations
+            .Add(new Decoration(PicSources["galleyPic"][0], new Point(-0.08, 0.09)));
+        DialogHandlers["ACCELERATED"].Dialog.Decorations
+            .Add(new Decoration(PicSources["galleyPic"][0], new Point(0.08, 0.09)));
+        DialogHandlers["GENDER"].Dialog.Decorations
+            .Add(new Decoration(PicSources["peoplePic1"][0], new Point(0.0, 0.09)));
+        DialogHandlers["TRIBE"].Dialog.Decorations
+            .Add(new Decoration(PicSources["peoplePic2"][0], new Point(0.0, 0.09)));
+        DialogHandlers["CUSTOMTRIBE"].Dialog.Decorations
+            .Add(new Decoration(PicSources["peoplePic2"][0], new Point(0.0, 0.09)));
+        DialogHandlers["CUSTOMTRIBE2"].Dialog.Decorations
+            .Add(new Decoration(PicSources["peoplePic2"][0], new Point(0.0, 0.09)));
+        DialogHandlers["NAME"].Dialog.Decorations
+            .Add(new Decoration(PicSources["peoplePic2"][0], new Point(0.0, 0.09)));
+        DialogHandlers["CUSTOMCITY"].Dialog.Decorations
+            .Add(new Decoration(PicSources["templePic"][0], new Point(0.08, 0.09)));
+    }
+
+    protected override List<MenuDetails> MenuMap { get; } =
+    [
+        new()
+        {
+            Key = "GAME", Defaults = new List<MenuElement>
+            {
+                new("&Game", Shortcut.None, Key.G),
+                new("Game &Options|Ctrl+O", new Shortcut(Key.O, ctrl: true), Key.O,
+                    commandId: GameOptions),
+                new("Graphic O&ptions|Ctrl+P", new Shortcut(Key.P, ctrl: true),
+                    Key.P, commandId: GraphicOptions),
+                new("&City Report Options|Ctrl+E", new Shortcut(Key.E, ctrl: true),
+                    Key.C, commandId: CityReportOptions),
+                new("M&ultiplayer Options|Ctrl+Y", new Shortcut(Key.Y, ctrl: true),
+                    Key.U),
+                new("&Game Profile", Shortcut.None, Key.G),
+                new("-", Shortcut.None, Key.None),
+                new("Pick &Music", Shortcut.None, Key.M),
+                new("-", Shortcut.None, Key.None),
+                new("&Save Game|Ctrl+S", new Shortcut(Key.S, ctrl: true), Key.S,
+                    commandId: SaveGame),
+                new("&Load Game|Ctrl+L", new Shortcut(Key.L, ctrl: true), Key.L,
+                    commandId: LoadGame),
+                new("&Join Game|Ctrl+J", new Shortcut(Key.J, ctrl: true), Key.J),
+                new("-", Shortcut.None, Key.None),
+                new("Set Pass&word|Ctrl+W", new Shortcut(Key.W, ctrl: true), Key.W),
+                new("Change &Timer|Ctrl+T", new Shortcut(Key.T, ctrl: true), Key.T),
+                new("-", Shortcut.None, Key.None),
+                new("&Retire|Ctrl+R", new Shortcut(Key.R, ctrl: true), Key.R),
+                new("&Quit|Ctrl+Q", new Shortcut(Key.Q, ctrl: true), Key.Q,
+                    commandId: QuitGame)
+            },
+        },
+
+        new()
+        {
+            Key = "KINGDOM", Defaults = new List<MenuElement>
+            {
+                new("&Kingdom", Shortcut.None, Key.K),
+                new("&Tax Rate|Shift+T", new Shortcut(Key.T, shift: true), Key.T, commandId: ChangeTaxRate),
+                new("-", Shortcut.None, Key.None),
+                new("View T&hrone Room|Shift+H", new Shortcut(Key.H, shift: true),
+                    Key.H, commandId: ViewThroneRoom),
+                new("Find &City|Shift+C", new Shortcut(Key.C, shift: true), Key.C, commandId: FindCity),
+                new("-", Shortcut.None, Key.None),
+                new("&REVOLUTION|Shift+R", new Shortcut(Key.R, shift: true), Key.R)
+            },
+        },
+
+
+        new()
+        {
+            Key = "VIEW", Defaults = new List<MenuElement>
+            {
+                new("&View", Shortcut.None, Key.V),
+                new("&Move Pieces|v", new Shortcut(Key.V), Key.M),
+                new("&View Pieces|v", new Shortcut(Key.V), Key.V),
+                new("-", Shortcut.None, Key.None),
+                new("Zoom &In|z", new Shortcut(Key.Z), Key.I, commandId: ZoomIn),
+                new("Zoom &Out|X", new Shortcut(Key.X), Key.O, commandId: ZoomOut),
+                new("-", Shortcut.None, Key.None),
+                new("Max Zoom In|Ctrl+Z", new Shortcut(Key.Z, ctrl: true),
+                    Key.None, commandId: MaxZoomIn),
+                new("Standard Zoom|Shift+Z", new Shortcut(Key.Z, shift: true),
+                    Key.None, commandId: StandardZoom),
+                new("Medium Zoom Out|Shift+X", new Shortcut(Key.X, shift: true),
+                    Key.None, commandId: MediumZoomOut),
+                new("Max Zoom Out|Ctrl+X", new Shortcut(Key.X, ctrl: true),
+                    Key.None, commandId: MaxZoomOut),
+                new("-", Shortcut.None, Key.None),
+                new("Show Map Grid|Ctrl+G", new Shortcut(Key.G, ctrl: true),
+                    Key.None, commandId: ShowMapGrid),
+                new("Arrange Windows", Shortcut.None, Key.None),
+                new("Show Hidden Terrain|t", new Shortcut(Key.T), Key.T),
+                new("&Center View|c", new Shortcut(Key.C), Key.C)
+            },
+        },
+
+
+        new()
+        {
+            Key = "@ORDERS", Defaults = new List<MenuElement>
+            {
+                new("&Orders", Shortcut.None, Key.O),
+                new("&Build New City|b", new Shortcut(Key.B), Key.B, BuildCityOrder, true),
+                new("Build &Road|r", new Shortcut(Key.R), Key.R, BuildRoadOrder,
+                    omitIfNoCommand: true),
+                new("Build &Irrigation|i", new Shortcut(Key.I), Key.I, BuildIrrigationOrder,
+                    omitIfNoCommand: true),
+                new("Build &Mines|m", new Shortcut(Key.M), Key.M, BuildMineOrder,
+                    omitIfNoCommand: true),
+                new("Build %STRING0", Shortcut.None, Key.None, BuildIrrigationOrder,
+                    omitIfNoCommand: true),
+                new("Transform to ...|o", new Shortcut(Key.O), Key.T),
+                new("Build &Airbase|e", new Shortcut(Key.E), Key.A),
+                new("Build &Fortress|f", new Shortcut(Key.F), Key.F),
+                new("Automate Settler|k", new Shortcut(Key.K), Key.None),
+                new("Clean Up &Pollution|p", new Shortcut(Key.P), Key.P),
+                new("&Pillage|Shift+P", new Shortcut(Key.P, shift: true), Key.P),
+                new("&Unload|u", new Shortcut(Key.U), Key.U),
+                new("&Go To|g", new Shortcut(Key.G), Key.G),
+                new("&Paradrop|p", new Shortcut(Key.P), Key.P),
+                new("Air&lift|l", new Shortcut(Key.L), Key.L),
+                new("Set &Home City|h", new Shortcut(Key.H), Key.H),
+                new("&Fortify|f", new Shortcut(Key.F), Key.F),
+                new("&Sleep|s", new Shortcut(Key.S), Key.S),
+                new("&Disband|Shift+D", new Shortcut(Key.D, shift: true), Key.D),
+                new("&Activate Unit|a", new Shortcut(Key.A), Key.A),
+                new("&Wait|w", new Shortcut(Key.W), Key.W),
+                new("S&kip Turn|SPACE", new Shortcut(Key.Space), Key.K),
+                new("End Player Tur&n|Ctrl+N", new Shortcut(Key.T, shift: true),
+                    Key.N, EndTurn)
+            },
+        },
+
+
+        new()
+        {
+            Key = "ADVISORS", Defaults = new List<MenuElement>
+            {
+                new("&Advisors", Shortcut.None, Key.A),
+                new("Chat with &Kings|Ctrl+C", new Shortcut(Key.C, ctrl: true),
+                    Key.K),
+                new("Consult &High Council", Shortcut.None, Key.H),
+                new("-", Shortcut.None, Key.None),
+                new("&City Status|F1", new Shortcut(Key.F1), Key.C, commandId: CityStatus),
+                new("&Defense Minister|F2", new Shortcut(Key.F2), Key.D, commandId: DefenseMinister),
+                new("&Foreign Minister|F3", new Shortcut(Key.F3), Key.F),
+                new("-", Shortcut.None, Key.None),
+                new("&Attitude Advisor|F4", new Shortcut(Key.F4), Key.A, commandId: AttitudeAdvisor),
+                new("&Trade Advisor|F5", new Shortcut(Key.F5), Key.T, commandId: TradeAdvisor),
+                new("&Science Advisor|F6", new Shortcut(Key.F6), Key.S, commandId: ScienceAdvisor),
+                new("-", Shortcut.None, Key.None),
+                new("Cas&ualty Timeline|Ctrl-D", new Shortcut(Key.D, ctrl: true),
+                    Key.U)
+            },
+        },
+
+
+        new()
+        {
+            Key = "WORLD", Defaults = new List<MenuElement>
+            {
+                new("&World", Shortcut.None, Key.W),
+                new("&Wonders of the World|F7", new Shortcut(Key.F7), Key.W, commandId: WorldWonders),
+                new("&Top 5 Cities|F8", new Shortcut(Key.F8), Key.T),
+                new("&Civilization Score|F9", new Shortcut(Key.F9), Key.C),
+                new("-", Shortcut.None, Key.None),
+                new("&Demographics|F11", new Shortcut(Key.F11), Key.D),
+                new("&Spaceships|F12", new Shortcut(Key.F12), Key.S)
+            },
+        },
+
+
+        new()
+        {
+            Key = "CHEAT", Defaults = new List<MenuElement>
+            {
+                new("&Cheat", Shortcut.None, Key.C),
+                new("Toggle Cheat Mode|Ctrl+K", new Shortcut(Key.K, ctrl: true),
+                    Key.None),
+                new("-", Shortcut.None, Key.None),
+                new("Create &Unit|Shift+F1", new Shortcut(Key.F1, shift: true),
+                    Key.U, CheatCreateUnit),
+                new("Reveal &Map|Shift+F2", new Shortcut(Key.F2, shift: true),
+                    Key.M, CheatRevealMapCommand),
+                new("Set &Human Player|Shift+F3", new Shortcut(Key.F3, shift: true),
+                    Key.H, CheatSetHumanPlayer),
+                new("-", Shortcut.None, Key.None),
+                new("Set Game Year|Shift+F4", new Shortcut(Key.F4, shift: true),
+                    Key.None, CheatSetGameYear),
+                new("&Kill Civilization|Shift+F5", new Shortcut(Key.F5, shift: true),
+                    Key.K, CheatKillCiv),
+                new("-", Shortcut.None, Key.None),
+                new("Te&chnology Advance|Shift+F6", new Shortcut(Key.F6, shift: true),
+                    Key.C, CheatTechAdvance),
+                new("&Edit Technologies|Ctrl+Shift+F6",
+                    new Shortcut(Key.F6, ctrl: true, shift: true),
+                    Key.E, CheatEditTechnologies),
+                new("Force &Government|Shift+F7", new Shortcut(Key.F7, shift: true),
+                    Key.G, CheatForceGovernment),
+                new("Change &Terrain At Cursor|Shift+F8", new Shortcut(Key.F8, shift: true),
+                    Key.T, CheatChangeTerrainAtCursor),
+                new("Destro&Y All Units At Cursor|Ctrl+Shift+D",
+                    new Shortcut(Key.D, ctrl: true, shift: true),
+                    Key.Y, CheatDestroyAllUnitsAtCursor),
+                new("Change Money|Shift+F9", new Shortcut(Key.F9, shift: true),
+                    Key.None, CheatChangeMoneyCommand),
+                new("-", Shortcut.None, Key.None),
+                new("Edit Unit|Ctrl+Shift+U", new Shortcut(Key.U, ctrl: true, shift: true),
+                    Key.None, CheatEditUnit),
+                new("Edit City|Ctrl+Shift+C", new Shortcut(Key.C, ctrl: true, shift: true),
+                    Key.None, CheatEditCity),
+                new("Edit King|Ctrl+Shift+K", new Shortcut(Key.K, ctrl: true, shift: true),
+                    Key.None, CheatEditKing),
+                new("-", Shortcut.None, Key.None),
+                new("Scenario Parameters|Ctrl+Shift+P",
+                    new Shortcut(Key.P, ctrl: true, shift: true),
+                    Key.None, CheatSetScenarioParameters),
+                new("Save As Scenario|Ctrl+Shift+S",
+                    new Shortcut(Key.S, ctrl: true, shift: true), Key.None),
+                new("-", Shortcut.None, Key.None),
+                new("Master Control|Ctrl+F1", new Shortcut(Key.F1, ctrl: true), Key.None,
+                    omitIfNoCommand: true, commandId: CheatMasterControl),
+            },
+        },
+
+
+        new()
+        {
+            Key = "EDITOR", Defaults = new List<MenuElement>
+            {
+                new("&Editor", Shortcut.None, Key.E),
+                new("Toggle &Scenario Flag|Ctrl+F", new Shortcut(Key.F, ctrl: true),
+                    Key.S),
+                new("-", Shortcut.None, Key.None),
+                new("&Advances Editor|Ctrl+Shift+1",
+                    new Shortcut(Key.D1, ctrl: true, shift: true), Key.A),
+                new("&Cities Editor|Ctrl+Shift+2",
+                    new Shortcut(Key.D2, ctrl: true, shift: true), Key.C),
+                new("E&ffects Editor|Ctrl+Shift+3",
+                    new Shortcut(Key.D3, ctrl: true, shift: true), Key.F),
+                new("&Improvements Editor|Ctrl+Shift+4",
+                    new Shortcut(Key.D4, ctrl: true, shift: true), Key.I),
+                new("&Terrain Editor|Ctrl+Shift+5",
+                    new Shortcut(Key.D5, ctrl: true, shift: true), Key.T),
+                new("T&ribe Editor|Ctrl+Shift+6",
+                    new Shortcut(Key.D6, ctrl: true, shift: true), Key.R),
+                new("&Units Editor|Ctrl+Shift+7",
+                    new Shortcut(Key.D7, ctrl: true, shift: true), Key.U),
+                new("&Events Editor|Ctrl+Shift+8",
+                    new Shortcut(Key.D8, ctrl: true, shift: true), Key.E),
+                new("-", Shortcut.None, Key.None),
+                new("Lua Console|Ctrl+Shift+9", new Shortcut(Key.D9, true, true), Key.L,
+                    omitIfNoCommand: true, commandId: OpenLuaConsole)
+            },
+        },
+
+
+        new()
+        {
+            Key = "PEDIA", Defaults = new List<MenuElement>
+            {
+                new("&Civilopedia", Shortcut.None, Key.C),
+                new("Civilization &Advances", Shortcut.None, Key.A, commandId: CivilopediaAdvances),
+                new("City &Improvements", Shortcut.None, Key.I, commandId: CivilopediaImprovements),
+                new("&Wonders of the World", Shortcut.None, Key.W, commandId: CivilopediaWonders),
+                new("Military &Units", Shortcut.None, Key.U, commandId: CivilopediaUnits),
+                new("-", Shortcut.None, Key.None),
+                new("&Governments", Shortcut.None, Key.G, commandId: CivilopediaGovernments),
+                new("&Terrain Types", Shortcut.None, Key.T, commandId: CivilopediaTerrain),
+                new("-", Shortcut.None, Key.None),
+                new("Game &Concepts", Shortcut.None, Key.C, commandId: CivilopediaConcepts),
+                new("-", Shortcut.None, Key.None),
+                new("&About Civilization II", Shortcut.None, Key.A)
+            },
+        }
+    ];
+
+    public override int UnitsRows => 7;
+    public override int UnitsPxHeight => 48;
+    public override Dictionary<string, IImageSource[]> PicSources { get; } = new();
+
+    public override ListboxLooks GetListboxLooks(ListboxType? type)
+    {
+        return type switch
+        {
+            ListboxType.Default => new ListboxLooks
+            {
+                BoxBackgroundColor = new Color(207, 207, 207, 255),
+                BoxLineColor = new Color(67, 67, 67, 255),
+                Font = Look.DefaultFont,
+                FontSize = 21,
+                TextColorFront = Color.Black,
+                TextColorShadow = Color.Blank,
+                SelectedTextFont = Fonts.TnRbold,
+                SelectedTextBackgroundColor = new Color(107, 107, 107, 255),
+                SelectedTextColorFront = Color.White,
+                SelectedTextColorShadow = Color.Black
+            },
+            ListboxType.Small => new ListboxLooks
+            {
+                BoxBackgroundColor = new Color(207, 207, 207, 255),
+                BoxLineColor = new Color(67, 67, 67, 255),
+                Font = Look.DefaultFont,
+                FontSize = 16,
+                TextColorFront = Color.Black,
+                TextColorShadow = Color.Blank,
+                SelectedTextFont = Fonts.TnRbold,
+                SelectedTextBackgroundColor = new Color(107, 107, 107, 255),
+                SelectedTextColorFront = Color.White,
+                SelectedTextColorShadow = Color.Black
+            },
+            ListboxType.Civilopedia => new ListboxLooks
+            {
+                BoxBackgroundColor = new Color(240, 240, 240, 255),
+                BoxLineColor = new Color(100, 100, 100, 255),
+                Font = Look.DefaultFont,
+                FontSize = Look.CivilopediaFontSize,
+                TextColorShadow = Color.Blank
+            },
+            _ => new ListboxLooks(),
+        };
+    }
+
+    public override OptionsLooks GetOptionsLooks(OptionsType? type)
+    {
+        return type switch
+        {
+            OptionsType.Default => new OptionsLooks
+            {
+                Font = Look.DefaultFont,
+                FontSize = Look.LabelFontSize,
+                TextColorFront = Look.LabelColour,
+                TextColorShadow = Look.LabelShadowColour,
+                IconScale = 1.0f
+            },
+            OptionsType.Small => new OptionsLooks
+            {
+                Font = Look.DefaultFont,
+                FontSize = 16,
+                TextColorFront = Look.LabelColour,
+                TextColorShadow = Look.LabelShadowColour,
+                IconScale = 0.5f
+            },
+            _ => new OptionsLooks(),
+        };
+    }
+
+    public override List<CityViewTiles> GetCityViewTiles()
+    {
+        return
+        [
+            new(0, 62, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(160, 116, 158, 114)), new(4, 0), 2),   // manhattan project
+            new(1, 24, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(497, 84, 123, 82)), new(165, 47), 15),   // supermarket
+            new(2, 9, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(1, 1, 123, 82)), new(267, 10), 2),   // aqueduct
+            new(3, 49, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(319, 116, 158, 114)), new(401, 10), 5),   // michel. chapel
+            new(4, 5, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(125, 84, 123, 82)), new(556, 5), 15),   // marketplace
+            new(5, 26, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(373, 84, 123, 82)), new(653, 1), 14),   // research lab
+            new(6, 50, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(478, 231, 158, 114)), new(728, 9), 2),   // copernicus obs.
+            new(7, 54, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(319, 346, 158, 114)), new(850, 9), 2),   // j.s.bach's
+            new(8, 7, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(125, 1, 123, 82)), new(980, 7), 1),   // courthouse
+            new(9, 32, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(1, 167, 123, 82)), new(1116, 7), 0),   // airport
+            new(10, 16, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(1, 84, 123, 82)), new(60, 110), 13),   // mfg plant
+            new(11, 18, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(1, 416, 123, 82)), new(170, 100), 12),   // recycl. center
+            new(12, 17, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(497, 167, 123, 82)), new(268, 100), 15),   // sdi defense
+            new(13, 27, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(125, 250, 123, 82)), new(370, 100), 13),   // sam battery
+            new(14, 3, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(373, 1, 123, 82)), new(514, 63), 18),   // granary
+            new(15, 4, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(1, 333, 123, 82)), new(620, 67), 15),   // temple
+            new(16, 39, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(1, 576, 158, 114)), new(460, 120), 20),   // pyramids
+            new(17, 56, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(160, 576, 158, 114)), new(586, 100), 15),   // adam smith's
+            new(18, 1, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(373, 333, 123, 82)), new(676, 114), 14),   // palace
+            new(19, 11, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(373, 250, 123, 82)), new(775, 105), 12),   // cathedral
+            new(20, 14, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(249, 167, 123, 82)), new(870, 100), 13),   // colosseum
+            new(21, 21, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(249, 84, 123, 82)), new(960, 114), 15),   // nucl. plant
+            new(22, 66, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(478, 576, 158, 114)), new(1062, 105), 14),   // cure cancer
+            new(23, 40, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(1, 116, 158, 114)), new(1162, 100), 12),   // hang. gardens
+            new(24, 53, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(1, 461, 158, 114)), new(95, 150), 15),   // leonardo's wrk.
+            new(25, 57, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(1, 346, 158, 114)), new(192, 150), 15),   // darwin's voy.
+            new(26, 10, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(125, 167, 123, 82)), new(290, 150), 14),   // bank
+            new(27, 2, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(249, 250, 123, 82)), new(537, 153), 19),   // barracks
+            new(28, 12, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(373, 167, 123, 82)), new(533, 200), 19),   // university
+            new(29, 47, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(478, 461, 158, 114)), new(658, 156), 4),   // king richard
+            new(30, 61, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(319, 1, 158, 114)), new(780, 156), 2),   // hoover dam
+            new(31, 15, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(249, 1, 123, 82)), new(916, 167), 15),   // factory
+            new(32, 60, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(160, 1, 158, 114)), new(1036, 175), 0),   // women suffrage
+            new(33, 28, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(1, 250, 123, 82)), new(1160, 213), 14),   // coastal fort.
+            new(34, 22, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(125, 416, 123, 82)), new(0, 213), 2),   // stock exch.
+            new(35, 23, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(497, 250, 123, 82)), new(110, 260), 14),   // sewer system
+            new(36, 29, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(1, 618, 123, 82)), new(210, 226), 3),   // solar plant
+            new(37, 43, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(478, 1, 158, 114)), new(332, 226), 2),   // great library
+            new(38, 44, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(478, 116, 158, 114)), new(450, 256), 7),   // oracle
+            new(39, 52, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(1, 231, 158, 114)), new(572, 256), 7),   // shakespeare th.
+            new(40, 6, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(497, 1, 123, 82)), new(735, 250), 20),   // library
+            new(41, 13, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(125, 618, 123, 82)), new(845, 259), 15),   // mass transit
+            new(42, 59, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(319, 576, 158, 114)), new(10, 295), 3),   // eiffel tower
+            new(43, 19, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(125, 333, 123, 82)), new(167, 287), 3),   // power plant
+            new(44, 20, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(249, 333, 123, 82)), new(293, 287), 1),   // hydro plant
+            new(45, 55, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(160, 346, 158, 114)), new(0, 364), 2),   // Is. Newton's
+            new(46, 63, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(160, 231, 158, 114)), new(129, 356), 1),  // untd. nations
+            new(47, 51, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(478, 346, 158, 114)), new(250, 356), 2),  // magellan exp.
+            new(48, 48, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(319, 461, 158, 114)), new(411, 324), 4),  // m.polo embassy
+            new(49, 64, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(1, 1, 158, 114)), new(533, 324), 1),   // apollo program
+            new(50, 65, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(319, 231, 158, 114)), new(680, 284), 3),   // seti program
+            // Draw altern. tile where ocean/river is (continental only):
+            new(51, -1, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(0, 0, 0, 0)), new(928, 273), 12),
+            new(52, -1, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(0, 0, 0, 0)), new(1020, 256), 15),
+            new(53, -1, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(0, 0, 0, 0)), new(1156, 286), 2),
+            new(54, -1, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(0, 0, 0, 0)), new(1043, 328), 2),
+            // Draw altern. tile where ocean is (continental & river):
+            new(55, -1, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(0, 0, 0, 0)), new(1155, 396), 13),
+            new(56, 8, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(249, 416, 357, 78)), new(368, 390), 0),    // city walls
+            new(57, 31, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(590, 499, 105, 105)), new(926, 366), 0),   // offshore platf.
+            new(58, 30, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(1, 499, 220, 100)), new(907, 274), 0),   // harbor
+            new(59, 34, new BinaryStorage("cv.dll", 0x1E6E0, 0x24C0F, new(222, 499, 367, 118)), new(907, 296), 0),   // port facility
+            new(60, 41, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(407, 852, 94, 160)), new(1070, 319), 0),   // colossus (sea)
+            new(61, 41, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(502, 852, 94, 160)), new(1070, 319), 0),   // colossus (sea)
+            new(62, 42, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(253, 852, 76, 133)), new(1184, 305), 0),   // lighthouse (sea)
+            new(63, 42, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(330, 852, 76, 133)), new(1184, 305), 0),   // lighthouse (land)
+            new(64, 45, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(1, 691, 304, 160)), new(0, 0), 0),   // great wall
+            new(65, 45, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(306, 691, 304, 160)), new(0, 0), 0),   // great wall (alt.)
+            new(66, 58, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(1, 852, 125, 253)), new(0, 0), 0),   // statue liberty (sea)
+            new(67, 58, new BinaryStorage("cv.dll", 0x432F0, 0x35C79, new(127, 852, 125, 253)), new(0, 0), 0),   // statue liberty (land)
+        ];
+    }
+
+    public override List<BinaryStorage> GetCityViewAltTiles()
+    {
+        return
+        [
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(1, 1, 158, 114)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(160, 1, 158, 114)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(319, 1, 158, 114)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(478, 1, 158, 114)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(1, 116, 158, 114)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(160, 116, 158, 114)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(319, 116, 158, 114)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(478, 116, 158, 114)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(1, 231, 158, 114)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(160, 231, 158, 114)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(319, 231, 158, 114)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(478, 231, 158, 114)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(1, 346, 123, 82)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(125, 346, 123, 82)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(249, 346, 123, 82)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(373, 346, 123, 82)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(497, 346, 123, 82)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(1, 429, 123, 82)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(125, 429, 123, 82)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(249, 429, 123, 82)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(373, 429, 123, 82)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(497, 429, 123, 82)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(1, 512, 123, 82)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(125, 512, 123, 82)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(249, 512, 123, 82)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(373, 512, 123, 82)),
+            new BinaryStorage("cv.dll", 0x78F6C, 0x242E4, new(497, 512, 123, 82))
+        ];
+    }
+
+    public override void GetShieldImages()
+    {
+        Color shadowColour = new(51, 51, 51, 255);
+        Color replacementColour = new(255, 0, 0, 255);
+
+        var shield = Images.ExtractBitmap(PicSources["backShield1"][0], this);
+        var shieldFront = shield.Copy();
+        var shieldBack = shield.Copy();
+        shieldFront.DrawRectangle(0, 0, shieldFront.Width, 7, Color.Black);
+        shield.ReplaceColor(replacementColour, shadowColour);
+
+        UnitImages.Shields = new MemoryStorage(shieldFront, "Unit-Shield", replacementColour);
+        UnitImages.ShieldBack = new MemoryStorage(shieldBack, "Unit-Shield-Back", replacementColour, true);
+        UnitImages.ShieldShadow = new MemoryStorage(shield, "Unit-Shield-Shadow");
+    }
+
+    public override void LoadPlayerColours()
+    {
+        var playerColours = new PlayerColour[9];
+        for (var col = 0; col < 9; col++)
+        {
+            var imageColours = Images.ExtractBitmap(PicSources["textColours"][col], this).LoadColors();
+            var textColour = imageColours[0];
+
+            imageColours = Images.ExtractBitmap(PicSources["flags"][col], this).LoadColors();
+            var lightColour = imageColours[3 * Images.ExtractBitmap(PicSources["flags"][col], this).Width + 8];
+
+            imageColours = Images.ExtractBitmap(PicSources["flags"][9 + col], this).LoadColors();
+            var darkColour = imageColours[3 * Images.ExtractBitmap(PicSources["flags"][9 + col], this).Width + 5];
+            Image.UnloadColors(imageColours);
+
+            playerColours[col] = new PlayerColour
+            {
+                Image = PicSources["flags"][col],
+                TextColour = textColour,
+                LightColour = lightColour,
+                DarkColour = darkColour
+            };
+        }
+        PlayerColours = playerColours;
+    }
+
+    public override UnitShield UnitShield(int unitType) => new()
+    {
+        ShieldInFrontOfUnit = false,
+        Offset = UnitImages.Units[unitType].FlagLoc,
+        StackingOffset = new(UnitImages.Units[unitType].FlagLoc.X < UnitImages.UnitRectangle.Width / 2 ? -4 : 4, 0),
+        ShadowOffset = new(UnitImages.Units[unitType].FlagLoc.X < UnitImages.UnitRectangle.Width / 2 ? -1 : 1, 1),
+        DrawShadow = true,
+        HPbarOffset = new(0, 2),
+        HPbarSize = new(12, 3),
+        HPbarColours = [new Color(243, 0, 0, 255), new Color(255, 223, 79, 255), new Color(87, 171, 39, 255)],
+        HPbarSizeForColours = [3, 8],
+        OrderOffset = new(Images.ExtractBitmap(PicSources["backShield1"][0], this).Width / 2f, 7),
+        OrderTextHeight = Images.ExtractBitmap(PicSources["backShield1"][0], this).Height - 7,
+    };
+
+    /// <summary>
+    /// Draw outer border wallpaper around panel
+    /// </summary>
+    /// <param name="wallpaper">Wallpaper image to tile onto the border</param>
+    /// <param name="destination">the Image we're rendering to</param>
+    /// <param name="height">final image Height</param>
+    /// <param name="width">final image Width</param>
+    /// <param name="padding">padding of borders</param>
+    /// <param name="statusPanel">is this status panel?</param>
+    public override void DrawBorderWallpaper(Wallpaper wallpaper, ref Image destination, int height, int width, Padding padding, bool statusPanel)
+    {
+        DrawUtils.TileFill([wallpaper.Outer], ref destination, new Rectangle(0, 0, width, padding.Top));
+        DrawUtils.TileFill([wallpaper.Outer], ref destination, new Rectangle(0, padding.Top, padding.Left, height - padding.Top - padding.Bottom));
+        DrawUtils.TileFill([wallpaper.Outer], ref destination, new Rectangle(width - padding.Right, padding.Top, padding.Right, height - padding.Top - padding.Bottom));
+        DrawUtils.TileFill([wallpaper.Outer], ref destination, new Rectangle(0, height - padding.Bottom, width, padding.Bottom));
+
+        if (statusPanel)
+        {
+            var columns = (width - padding.Left - padding.Right) / wallpaper.Outer.Width + 1;
+            var sourceRec = new Rectangle { Height = 4, Width = wallpaper.Outer.Width };
+            for (var col = 0; col < columns; col++)
+            {
+                destination.Draw(wallpaper.Outer, sourceRec,
+                    new Rectangle(col * wallpaper.Outer.Width, padding.Top + 62, wallpaper.Outer.Width, 4), Color.White);
+            }
+        }
+    }
+
+    public override void DrawBorderLines(ref Image destination, int height, int width, Padding padding, bool statusPanel)
+    {
+        // Outer border
+        var pen1 = new Color(227, 227, 227, 255);
+        var pen2 = new Color(105, 105, 105, 255);
+        var pen3 = new Color(255, 255, 255, 255);
+        var pen4 = new Color(160, 160, 160, 255);
+        var pen5 = new Color(240, 240, 240, 255);
+        var pen6 = new Color(223, 223, 223, 255);
+        var pen7 = new Color(67, 67, 67, 255);
+        destination.DrawLine(0, 0, width - 2, 0, pen1); // 1st layer of border
+        destination.DrawLine(0, 0, width - 2, 0, pen1);
+        destination.DrawLine(0, 0, 0, height - 2, pen1);
+        destination.DrawLine(width - 1, 0, width - 1, height - 1, pen2);
+        destination.DrawLine(0, height - 1, width - 1, height - 1, pen2);
+        destination.DrawLine(1, 1, width - 3, 1, pen3); // 2nd layer of border
+        destination.DrawLine(1, 1, 1, height - 3, pen3);
+        destination.DrawLine(width - 2, 1, width - 2, height - 2, pen4);
+        destination.DrawLine(1, height - 2, width - 2, height - 2, pen4);
+        destination.DrawLine(2, 2, width - 4, 2, pen5); // 3rd layer of border
+        destination.DrawLine(2, 2, 2, height - 4, pen5);
+        destination.DrawLine(width - 3, 2, width - 3, height - 3, pen5);
+        destination.DrawLine(2, height - 3, width - 3, height - 3, pen5);
+        destination.DrawLine(3, 3, width - 5, 3, pen6); // 4th layer of border
+        destination.DrawLine(3, 3, 3, height - 5, pen6);
+        destination.DrawLine(width - 4, 3, width - 4, height - 4, pen7);
+        destination.DrawLine(3, height - 4, width - 4, height - 4, pen7);
+        destination.DrawLine(4, 4, width - 6, 4, pen6); // 5th layer of border
+        destination.DrawLine(4, 4, 4, height - 6, pen6);
+        destination.DrawLine(width - 5, 4, width - 5, height - 5, pen7);
+        destination.DrawLine(4, height - 5, width - 5, height - 5, pen7);
+
+        // Inner panel
+        destination.DrawLine(9, padding.Top - 1, 9 + (width - 18 - 1), padding.Top - 1, pen7); // 1st layer of border
+        if (!statusPanel)
+        {
+            // 1st layer of border
+            destination.DrawLine(10, padding.Top - 1, 10, height - padding.Bottom - 1, pen7);
+            destination.DrawLine(width - 11, padding.Top - 1, width - 11, height - padding.Bottom - 1, pen6);
+            destination.DrawLine(9, height - padding.Bottom, width - 9 - 1, height - padding.Bottom, pen6);
+            destination.DrawLine(10, padding.Top - 2, 9 + (width - 18 - 2), padding.Top - 2, pen7); // 2nd layer of border
+            destination.DrawLine(9, padding.Top - 2, 9, height - padding.Bottom, pen7);
+            destination.DrawLine(width - 10, padding.Top - 2, width - 10, height - padding.Bottom, pen6);
+            destination.DrawLine(9, height - padding.Bottom + 1, width - 9 - 1, height - padding.Bottom + 1, pen6);
+        }
+        else
+        {
+            // 1st layer of border
+            destination.DrawLine(9, padding.Top + 67, 9 + (width - 18 - 1), padding.Top + 67, pen7);
+            destination.DrawLine(10, padding.Top - 1, 10, padding.Top + 59, pen7);
+            destination.DrawLine(10, padding.Top + 66, 10, height - padding.Bottom - 1, pen7);
+            destination.DrawLine(width - 11, padding.Top - 1, width - 11, padding.Top + 61, pen6);
+            destination.DrawLine(width - 11, padding.Top + 67, width - 11, height - padding.Bottom - 1, pen6);
+            destination.DrawLine(10, height - padding.Bottom, width - 9 - 1, height - padding.Bottom, pen6);
+            destination.DrawLine(10, padding.Top + 60, width - 9 - 1, padding.Top + 60, pen6);
+            destination.DrawLine(10, padding.Top - 2, 9 + (width - 18 - 2), padding.Top - 2, pen7); // 2nd layer of border
+            destination.DrawLine(10, padding.Top + 66, 9 + (width - 18 - 2), padding.Top + 66, pen7);
+            destination.DrawLine(9, padding.Top - 2, 9, padding.Top + 60, pen7);
+            destination.DrawLine(9, padding.Top + 66, 9, height - padding.Bottom, pen7);
+            destination.DrawLine(width - 10, padding.Top - 2, width - 10, padding.Top + 59, pen6);
+            destination.DrawLine(width - 10, padding.Top + 66, width - 10, height - padding.Bottom - 1, pen6);
+            destination.DrawLine(9, height - padding.Bottom + 1, width - 9 - 1, height - padding.Bottom + 1, pen6);
+            destination.DrawLine(9, padding.Top + 61, width - 9 - 1, padding.Top + 61, pen6);
+        }
+    }
+
+    public override void DrawButton(Texture2D texture, Rectangle bounds)
+    {
+        var x = (int)bounds.X;
+        var y = (int)bounds.Y;
+        var w = (int)bounds.Width;
+        var h = (int)bounds.Height;
+
+        Graphics.DrawRectangleLinesEx(bounds, 1.0f, new Color(100, 100, 100, 255));
+        Graphics.DrawRectangleRec(new Rectangle(x + 1, y + 1, w - 2, h - 2), Color.White);
+        Graphics.DrawRectangleRec(new Rectangle(x + 3, y + 3, w - 6, h - 6), new Color(192, 192, 192, 255));
+        Graphics.DrawLine(x + 2, y + h - 2, x + w - 2, y + h - 2, new Color(128, 128, 128, 255));
+        Graphics.DrawLine(x + 3, y + h - 3, x + w - 2, y + h - 3, new Color(128, 128, 128, 255));
+        Graphics.DrawLine(x + w - 1, y + 2, x + w - 1, y + h - 1, new Color(128, 128, 128, 255));
+        Graphics.DrawLine(x + w - 2, y + 3, x + w - 2, y + h - 1, new Color(128, 128, 128, 255));
+    }
+    
+    protected override IEnumerable<Ruleset> GenerateRulesets(string path, string title)
+    {
+        var rules = FileUtilities.GetFile(path, "rules.txt");
+        if (rules != null)
+        {
+            yield return new Ruleset(title, new Dictionary<string, string>
+            {
+                { "Civ2Gold", "Standard" }
+            }, path);
+
+            foreach (var subdirectory in Directory.EnumerateDirectories(path))
+            {
+                var scnRules = FileUtilities.GetFile(subdirectory, "rules.txt");
+                if (scnRules != null)
+                {
+
+                    var game = Utils.GetFilePath("game.txt", [subdirectory]);
+                    var name = "";
+                    if (File.Exists(game))
+                    {
+                        foreach (var line in File.ReadLines(game))
+                        {
+                            if (!line.StartsWith("@title")) continue;
+                            name = line[7..];
+                            break;
+                        }
+                    }
+
+                    if (string.IsNullOrWhiteSpace(name))
+                    {
+                        name = Path.GetFileName(subdirectory);
+                    }
+
+                    yield return new Ruleset(name, new Dictionary<string, string>
+                    {
+
+                        { "Civ2Gold", "Scenario-" + name }
+                    }, subdirectory, path);
+                }
+            }
+        }
+    }
+}

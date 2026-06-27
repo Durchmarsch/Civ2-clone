@@ -1,0 +1,71 @@
+using System.Collections.Generic;
+using System.Linq;
+using Civ2engine.Advances;
+using Model.Core;
+using Model.Core.Cities;
+
+namespace Civ2engine
+{
+    public class History : IHistory
+    {
+        private readonly IGame _game;
+
+        private List<HistoryEvent> _events = new();
+
+        internal History(IGame game)
+        {
+            _game = game;
+        }
+
+        public void AdvanceDiscovered(int advance, Civilization civ)
+        {
+            _events.Add(new ResearchEvent(advance, civ.Id, _game));
+        }
+
+        public void CityBuilt(City city)
+        {
+            _events.Add(new CityBuiltEvent(city,_game));
+        }
+    }
+
+    public class CityBuiltEvent : HistoryEvent
+    {
+        public CityBuiltEvent(City city, IGame game) : base(HistoryEventType.CityBuilt, city.Owner.Id, game)
+        {
+            X = city.X;
+            Y = city.Y;
+            Name = city.Name;
+        }
+
+        public string Name { get; }
+
+        public int Y { get;  }
+
+        public int X { get; }
+    }
+
+    public class ResearchEvent : HistoryEvent
+    {
+        public int Advance { get; }
+
+        public ResearchEvent(int advance, int civ, IGame game) : base(HistoryEventType.AdvanceDiscovered, civ, game)
+        {
+            Advance = advance;
+        }
+    }
+
+    public abstract class HistoryEvent
+    {
+        public HistoryEventType EventType { get; }
+        public int Civ { get; }
+
+        public int Turn { get; }
+        protected HistoryEvent(HistoryEventType eventType, int civ, IGame game)
+        {
+            EventType = eventType;
+            Civ = civ;
+            Turn = game.TurnNumber;
+        }
+
+    }
+}

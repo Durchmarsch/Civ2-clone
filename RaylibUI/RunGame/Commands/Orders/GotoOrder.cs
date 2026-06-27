@@ -1,0 +1,76 @@
+using Civ2engine;
+using Civ2engine.Enums;
+using Civ2engine.IO;
+using Civ2engine.MapObjects;
+using Civ2engine.UnitActions;
+using JetBrains.Annotations;
+using Model;
+using Model.Core.Units;
+using Model.Input;
+using Model.Interface;
+using Model.Controls;
+using Model.Core.Cities;
+using Path = Civ2engine.Units.Path;
+
+namespace RaylibUI.RunGame.Commands.Orders;
+
+[UsedImplicitly]
+public class GotoOrder(GameScreen gameScreen) : Order(gameScreen, new Shortcut(Key.G), CommandIds.GotoOrder)
+{
+    private List<City> _cities = gameScreen.Player.Civilization.Cities;
+    private bool _allCities;
+
+    public override bool Update()
+    {
+        return SetCommandState(GameScreen.Player.ActiveUnit != null ? CommandStatus.Normal : CommandStatus.Invalid);
+    }
+
+    public override void Action()
+    {
+        _allCities = false;
+        var activeUnit = GameScreen.Player.ActiveUnit!;
+        Show(GameScreen.Player.Civilization.Cities, activeUnit);
+    }
+
+    private void HandleButtonClick(string button, int index, IList<bool>? arg3, IDictionary<string, string>? arg4)
+    {
+        var activeUnit = GameScreen.Player.ActiveUnit!;
+        if (button == Labels.Ok)
+        {
+            var city = _cities[index];
+            var path = Path.CalculatePathBetween(GameScreen.Game, activeUnit.CurrentLocation, city.Location,
+                activeUnit.Domain,
+                activeUnit.MaxMovePoints, activeUnit.Owner, activeUnit.Alpine, activeUnit.IgnoreZonesOfControl);
+            if (path != null)
+            {
+                activeUnit.Order = (int)OrderType.GoTo;
+                activeUnit.GoToX = city.Location.X;
+                activeUnit.GoToY = city.Location.Y;
+                path.Follow(GameScreen.Game, activeUnit);
+                if (activeUnit.MovePoints <= 0)
+                {
+                    GameScreen.Game.ChooseNextUnit();
+                }
+            }
+        }
+        else
+        {
+            _allCities = !_allCities;
+            var cities = _allCities ? GameScreen.Game.AllCities : GameScreen.Player.Civilization.Cities;
+            Show(cities, activeUnit);
+        }
+    }
+
+    private void Show(List<City> cities, Unit activeUnit)
+    {
+        var islands = MovementFunctions.GetIslandsFor(activeUnit);
+        _cities = cities.Where(c => c.Location != activeUnit.CurrentLocation &&
+                                    islands.Contains(c.Location.Island) ||
+                                    c.Location.Neighbours().Any(l => islands.Contains(l.Island))).OrderBy(c => c.Name)
+            .ToList();
+        var listbox = new ListboxDefinition();
+        listbox.Update(_cities.Select(c => c.Name).ToList());
+        GameScreen.ShowPopup("GOTO", handleButtonClick: HandleButtonClick,
+            listBox: listbox);
+    }
+}

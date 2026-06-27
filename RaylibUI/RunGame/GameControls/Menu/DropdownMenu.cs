@@ -1,0 +1,265 @@
+using System.Numerics;
+using Model;
+using Model.Controls;
+using Raylib_CSharp.Collision;
+using Raylib_CSharp.Colors;
+using Raylib_CSharp.Interact;
+using Raylib_CSharp.Rendering;
+using Raylib_CSharp.Transformations;
+
+namespace RaylibUI.RunGame.GameControls.Menu;
+
+public class DropdownMenu(GameScreen gameScreen) : BaseDialog(gameScreen.Main)
+{
+    private bool _shown;
+    private int _current = -1;
+    private readonly IUserInterface _active = gameScreen.MainWindow.ActiveInterface;
+    private bool _clickInMenu;
+    private bool _clickOutSide;
+    private readonly List<int> _separatorOffsets = [];
+    private int _width, _height;
+
+    /// <summary>
+    /// Index of currently selected dropdown menu (-1 = no menu selected)
+    /// </summary>
+    public int Current => _shown ? _current : -1;
+
+    public void Show(Vector2 location, int menuIndex, IEnumerable<MenuCommand> elements, int[] separatorRows)
+    {
+        _separatorOffsets.Clear();
+        Location = location;
+        _current = menuIndex;
+        Controls.Clear();
+        var childWidths = new List<int>{ 20,10};
+        foreach (var command in elements)
+        {
+            command.Enabled = command.GameCommand?.Update() ?? false;
+            var dropDownItem = new DropDownItem(this, _active.Look, command,  Controls.Count);
+            Controls.Add( dropDownItem);
+            
+            dropDownItem.GetPreferredWidth();
+            var itemWidths = dropDownItem.ChildWidths;
+            if (childWidths[0] < itemWidths[0])
+            {
+                childWidths[0] = itemWidths[0];
+            }
+
+            if (childWidths[1] < itemWidths[1])
+            {
+                childWidths[1] = itemWidths[1];
+            }
+        }
+
+        var dropdownWidth = childWidths.Sum() + DropDownItem.DropdownSpacing;
+        var currentY = 3;
+        int itemNo = 0;
+        foreach (var menuItem in Controls.OfType<DropDownItem>())
+        {
+            var height = menuItem.GetPreferredHeight() + 8;
+            menuItem.SetChildWidths(childWidths);
+            menuItem.Location = new(0, currentY);
+            menuItem.Width = dropdownWidth;
+            menuItem.Height = height;
+            menuItem.OnResize();
+            currentY += height;
+            if (separatorRows != null && separatorRows.Contains(itemNo))
+            {
+                currentY += 7;
+                _separatorOffsets.Add(currentY - 8);
+            }
+            itemNo++;
+        }
+
+        _width = dropdownWidth;
+        _height = (int)(currentY - location.Y + 10);
+        gameScreen.ShowDialog(this,true);
+        _shown = true;
+        _clickInMenu = false;
+        _clickOutSide = false;
+    }
+    
+    
+    // What happens when mouse is outside the active dropdown menu
+    public override void MouseOutsideControls(Vector2 mousePos)
+    {
+        if (Input.IsMouseButtonDown(MouseButton.Left))
+        {
+            if (ShapeHelper.CheckCollisionPointRec(mousePos, MenuBar.Bounds))
+            {
+                _clickInMenu = true;
+                _clickOutSide = false;
+            }
+            else
+            {
+                _clickOutSide = true;
+                _clickInMenu = false;
+            }
+        }
+        else
+        {
+            // Hide the active menu if it's clicked
+            if (_clickInMenu)
+            {
+                foreach (var control in MenuBar.Controls!.OfType<MenuLabel>())
+                {
+                    if (ShapeHelper.CheckCollisionPointRec(mousePos, control.Bounds))
+                    {
+                        if (control.Index == _current)
+                        {
+                            Hide();
+                            //_gameScreen.Focused = control;
+                        }
+                        return;
+                    }
+                }
+            }
+
+            if (_clickOutSide)
+            {
+                Hide();
+                gameScreen.Hovered = null;
+            }
+            
+            // Activate another menu if the mouse hovers over it
+            foreach (var control in MenuBar.Controls!.OfType<MenuLabel>())
+            {
+                if (ShapeHelper.CheckCollisionPointRec(mousePos, control.Bounds))
+                {
+                    if (control.Index != _current)
+                    {
+                        control.Activate();
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
+    public override int Height => _height;
+    public override int Width => _width;
+
+
+    public GameMenu MenuBar { get; } = gameScreen.MenuBar;
+
+    public override void OnKeyPress(KeyboardKey key)
+    {
+        switch (key)
+        {
+            case KeyboardKey.Left:
+                MenuBar.Activate(_current - 1);
+                return;
+            case KeyboardKey.Right:
+                MenuBar.Activate(_current + 1);
+                return;
+            case KeyboardKey.Down:
+                if (Focused == null)
+                {
+                    Focused = Controls[0];
+                }
+                else if (Focused == Controls[^1])
+                {
+                    Focused = null;
+                }
+                else
+                {
+                    var idx = Controls.IndexOf(Focused);
+                    Focused = Controls[idx + 1];
+                }
+
+                return;
+            case KeyboardKey.Up:
+                if (Focused == null)
+                {
+                    Focused = Controls[^1];
+                }
+                else if (Focused == Controls[0])
+                {
+                    Focused = null;
+                }
+                else
+                {
+                    var idx = Controls.IndexOf(Focused);
+                    Focused = Controls[idx - 1];
+                }
+
+                return;
+        }
+
+
+
+
+        if (Focused == null)
+        {
+            var hotControl = Controls.FirstOrDefault(c => c is DropDownItem dd && dd.HotKey == key.ToModelKey());
+            if (hotControl != null)
+            {
+                Focused = hotControl;
+                return;
+            }
+        }
+        else
+        {
+            var idx = Controls.IndexOf(Focused);
+            for (int i = idx +1; i != idx; i++)
+            {
+                if (i >= Controls.Count)
+                {
+                    if (idx == -1) break;
+                    i = -1;
+                    continue;
+                }
+
+                if (Controls[i] is DropDownItem dd && dd.HotKey == key.ToModelKey())
+                {
+                    Focused = Controls[i];
+                    return;
+                }
+            }
+
+            if (idx != -1 && Controls[idx] is DropDownItem cdd && cdd.HotKey == key.ToModelKey())
+            {
+                //Do nothing as they pressed the hotkey for this element and there is no conflict
+                return;
+            }
+        }
+
+        if (MenuBar.Activate(_current, key))
+        {
+            return;
+        }   
+        base.OnKeyPress(key);
+    }
+
+    public override void Resize(int width, int height)
+    {
+    }
+
+    public override void Draw(bool pulse)
+    {
+        if (!_shown || Controls.Count == 0) return;
+
+        Graphics.DrawRectangleRec(Bounds, new Color(242, 242, 242, 255));
+        Graphics.DrawRectangleLinesEx(Bounds, 1f, new Color(204, 204, 204, 255));
+
+        foreach (var control in Controls)
+        {
+            if (Focused == control)
+            {
+                Graphics.DrawRectangleRec(control.Bounds, new Color(145, 201, 247, 255));
+            }
+            control.Draw(pulse);
+        }
+
+        foreach(var offset in _separatorOffsets)
+        {
+            Graphics.DrawLine((int)Bounds.X, (int)Bounds.Y + offset, (int)Bounds.X + Width, (int)Bounds.Y + offset, new Color(215, 215, 215, 255));
+        }
+    }
+
+    public void Hide()
+    {
+        _shown = false;
+        gameScreen.CloseDialog(this);
+        gameScreen.Focused = null;
+    }
+}

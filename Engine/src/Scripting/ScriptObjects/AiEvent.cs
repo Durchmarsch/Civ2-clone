@@ -1,0 +1,20 @@
+namespace Civ2engine.Scripting.ScriptObjects;
+
+public static class AiEvent
+{
+    public const string TurnStart = "Turn_Start";
+    public const string TurnEnd = "Turn_End";
+    public const string UnitOrdersNeeded = "Unit_Orders_Needed";
+    
+    public const string ResearchComplete = "Research_Complete";
+    public const string UnitsLost = "Units_Lost";
+    public const string UnitMoved = "Unit_Moved";
+    
+    public const string CityProductionComplete = "City_Production_Complete";
+    public const string CityProductionInvalid = "City_Production_Invalid";
+    
+    public const string CityLost = "City_Lost";
+    public const string CityCaptured = "City_Captured";
+    
+    public const string SelectTechFromConquest = "Select_Tech_From_Conquest";
+}

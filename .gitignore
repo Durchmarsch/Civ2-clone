@@ -1,0 +1,11 @@
+**/bin/**
+**/obj/**
+**/.vs/**
+
+# Original game assets (copyrighted, must not be committed)
+Civilization 2/
+Civilization_2*/
+
+# macOS junk
+.DS_Store
+**/.DS_Store
