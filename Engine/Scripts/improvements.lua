@@ -98,6 +98,18 @@ civ.getImprovement(40).Effects.Add(civ.core.Effects.ContentFace, 1)
 -- the actual doubling is applied in code (CityExtensions happiness calc).
 civ.getImprovement(44).CivWide = true
 
+--Lighthouse (42): veteran sea units in every city of the civ.
+civ.getImprovement(42).CivWide = true
+civ.getImprovement(42).Effects.Add(civ.core.Effects.Veteran, civ.core.UnitDomain.Sea)
+
+--Great Wall (45): acts as City Walls in every city of the civ (does not stack with real walls).
+civ.getImprovement(45).CivWide = true
+civ.getImprovement(45).Effects.Add(civ.core.Effects.Walled, 200)
+
+--Sun Tzu's War Academy (46): every unit built anywhere in the civ is a veteran.
+civ.getImprovement(46).CivWide = true
+civ.getImprovement(46).Effects.Add(civ.core.Effects.Veteran, civ.core.UnitDomain.All)
+
 --Hoover Dam (61): acts as a power plant (+50% shields) in every city of the civ.
 -- (Original limits this to the same continent; approximated as civ-wide.)
 civ.getImprovement(61).CivWide = true

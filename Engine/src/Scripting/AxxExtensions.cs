@@ -80,6 +80,7 @@ namespace Civ2engine.Scripting
         public int Sea = (int)UnitGas.Sea;
         public int Air = (int)UnitGas.Air;
         public int Special = (int)UnitGas.Special;
+        public int All = -1; // sentinel: veteran for every domain (Sun Tzu's War Academy)
     }
 
     public class EffectsMap

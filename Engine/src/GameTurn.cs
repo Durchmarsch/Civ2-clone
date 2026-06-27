@@ -1,4 +1,5 @@
-﻿using Civ2engine.Advances;
+﻿using System.Linq;
+using Civ2engine.Advances;
 using Civ2engine.Production;
 using Model.Core.Player;
 
@@ -23,6 +24,10 @@ namespace Civ2engine
         {
             var activeCiv = game.GetActiveCiv;
             var currentScienceCost = AdvanceFunctions.CalculateScienceCost(game, activeCiv);
+
+            // Adam Smith's Trading Co. pays the upkeep of every building that costs 1 gold/turn.
+            var hasAdamSmith = activeCiv.Cities
+                .Any(c => c.Improvements.Any(i => i.Name == "Adam Smith's Trading Co."));
 
             var rules = game.Rules;
             
@@ -139,7 +144,7 @@ namespace Civ2engine
 
                 foreach (var cityImprovement in city.Improvements)
                 {
-                    if (cityImprovement.Upkeep > 0)
+                    if (cityImprovement.Upkeep > 0 && !(hasAdamSmith && cityImprovement.Upkeep <= 1))
                     {
                         if (activeCiv.Money >= cityImprovement.Upkeep)
                         {
@@ -171,25 +176,16 @@ namespace Civ2engine
             //  - Otherwise, once enough beakers have accumulated, complete the advance.
             if (activeCiv.Cities.Count > 0)
             {
-                // DIAGNOSTIC (research-stopped investigation) -- remove after diagnosis
-                if (activeCiv == game.GetPlayerCiv)
-                {
-                    var poss = AdvanceFunctions.CalculateAvailableResearch(game, activeCiv).Count;
-                    System.Console.WriteLine($"[RESDIAG] researching={activeCiv.ReseachingAdvance} science={activeCiv.Science} cost={currentScienceCost} possibilities={poss}");
-                }
-
                 if (activeCiv.ReseachingAdvance < 0)
                 {
                     var researchPossibilities = AdvanceFunctions.CalculateAvailableResearch(game, activeCiv);
                     if (researchPossibilities.Count > 0)
                     {
-                        System.Console.WriteLine($"[RESDIAG] -> SelectNewAdvance ({researchPossibilities.Count} options)"); // DIAGNOSTIC
                         player.SelectNewAdvance(researchPossibilities);
                     }
                 }
                 else if (currentScienceCost > 0 && currentScienceCost <= activeCiv.Science)
                 {
-                    System.Console.WriteLine($"[RESDIAG] -> COMPLETE advance {activeCiv.ReseachingAdvance}"); // DIAGNOSTIC
                     player.NotifyAdvanceResearched(activeCiv.ReseachingAdvance);
                     game.GiveAdvance(activeCiv.ReseachingAdvance, activeCiv);
                     activeCiv.Science -= currentScienceCost;

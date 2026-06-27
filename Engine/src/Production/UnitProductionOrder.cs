@@ -1,4 +1,5 @@
 using System.Linq;
+using Civ2engine;
 using Civ2engine.Enums;
 using Model;
 using Model.Constants;
@@ -24,9 +25,11 @@ namespace Civ2engine.Production
                 return false;
             }
 
-            var veteran = city.Improvements.Any(i =>
-                i.Effects.ContainsKey(Effects.Veteran) &&
-                i.Effects[Effects.Veteran] == (int)unitDefinition.Domain);
+            // A unit is built veteran if the city has a barracks-type building for its domain,
+            // or a civ-wide veteran wonder: Lighthouse (sea) / Sun Tzu's War Academy (all domains, -1).
+            var veteran = city.EffectImprovements().Any(i =>
+                i.Effects.TryGetValue(Effects.Veteran, out var dom) &&
+                (dom == (int)unitDefinition.Domain || dom == -1));
 
             var unit = new Unit
             {

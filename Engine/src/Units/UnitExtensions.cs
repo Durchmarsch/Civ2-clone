@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using Civ2engine;
 using Civ2engine.Enums;
 using Civ2engine.MapObjects;
 using Model.Constants;
@@ -63,8 +64,11 @@ public static class UnitExtensions
             if (tile.CityHere != null &&
                 defendingUnit.Domain == UnitGas.Ground && !attackingUnit.NegatesCityWalls)
             {
+                // Best of the city's own City Walls and any civ-wide wall wonder (Great Wall);
+                // take the max rather than summing so they don't stack.
                 var totalWallDefence =
-                    tile.CityHere.Improvements.Sum(i => i.Effects.GetValueOrDefault(Effects.Walled, 0)) / 100m;
+                    tile.CityHere.EffectImprovements().Select(i => i.Effects.GetValueOrDefault(Effects.Walled, 0))
+                        .DefaultIfEmpty(0).Max() / 100m;
                 if (totalWallDefence > bestGroundFactor)
                 {
                     bestGroundFactor = totalWallDefence;
