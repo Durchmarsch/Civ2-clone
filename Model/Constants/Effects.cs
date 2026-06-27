@@ -17,6 +17,7 @@ namespace Model.Constants
         SeaDefence = 12,
         MissileDefence = 13,
         ReduceCorruption = 14,
+        ShieldMultiplier = 15,
         OceanRequired = 16,
         
         EliminateIndustrialPollution = 20,

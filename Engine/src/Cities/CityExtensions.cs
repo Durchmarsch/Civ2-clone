@@ -33,6 +33,16 @@ namespace Civ2engine
                 totalTrade += t.GetTrade(orgLevel);
             });
 
+            // Production buildings (Factory, Power/Hydro/Nuclear Plant, Mfg Plant) and the
+            // Hoover Dam boost shield output. Additive, matching Civ2's +150% maximum.
+            var shieldBonus = city.EffectImprovements()
+                .Where(i => i.Effects.ContainsKey(Effects.ShieldMultiplier))
+                .Sum(i => i.Effects[Effects.ShieldMultiplier]);
+            if (shieldBonus > 0)
+            {
+                totalSheilds += totalSheilds * shieldBonus / 100;
+            }
+
 
             city.Support = city.SupportedUnits.Count(u => u.NeedsSupport);
 

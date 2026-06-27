@@ -287,5 +287,16 @@
   - **外交 / 大使馆**（马可波罗、埃菲尔铁塔、联合国）—— 无外交系统。
   - **单位升级**（列奥纳多工坊）—— 无升级逻辑。
   - **军事不满 / 戒严**（女权运动）—— 幸福模型未建模驻军不满，无可减项。
-  - **生产倍率 / 大陆范围**（胡佛大坝、王理查的十字军、巴赫教堂）—— 无护盾倍率效果、无“大陆”范围。
+  - **王理查的十字军**（每块产护盾的地块 +1）、**巴赫教堂**（大陆范围）—— 需逐地块护盾加成 / “大陆”范围。
   - 这些每个都要先建对应子系统，建议后续按子系统逐个推进，避免塞入半成品。
+
+## 22. 生产倍率子系统（第五轮）
+
+- **背景**：Factory / Power Plant / Hydro Plant / Nuclear Plant / Manufacturing Plant 这些核心生产建筑在 `improvements.lua` 里**全都没定义效果**（原本是 bug，建了等于白建）；胡佛大坝也无法实现。根因是 `Effects` 枚举根本没有“护盾 / 生产倍率”这一项。
+- **核实数值**（Civ wiki / CivFanatics）：Factory +50%、Power/Hydro/Nuclear Plant 各 +50%（与 Factory 叠加）、Mfg Plant +50%，三者全建最高 **+150%**；胡佛大坝 = 全城等同水电站。
+- **实现**：
+  - `Model/Constants/Effects.cs` 新增 `ShieldMultiplier = 15`。
+  - `Engine/src/Scripting/AxxExtensions.cs` 暴露 `ShieldMultiplier` 给 lua（**漏了这步会让 `civ.core.Effects.ShieldMultiplier` 解析为 null → `Effects.Add(null,…)` 抛 `ArgumentNullException(key)`，38 个加载规则的测试集体失败**；这是本轮踩的坑）。
+  - `Engine/src/Cities/CityExtensions.cs`：算完地块护盾后，按 `EffectImprovements` 里 `ShieldMultiplier` 之和加法提升 `totalSheilds`（`totalSheilds += totalSheilds * bonus / 100`）。
+  - `improvements.lua`：Factory(15)/Mfg Plant(16)/Power Plant(19)/Hydro(20)/Nuclear(21) 各 `ShieldMultiplier 50`；**Hoover Dam(61)** `ShieldMultiplier 50` + CivWide。
+- **已知简化**：加法模型不强制“发电厂需先有工厂才生效”、也不强制三种发电厂互斥;正常建造顺序（工厂→发电厂→Mfg）结果与原版一致，极端堆叠会偏高。胡佛的“同大陆”范围近似为全文明。

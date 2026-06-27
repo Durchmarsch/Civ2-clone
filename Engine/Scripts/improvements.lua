@@ -39,13 +39,18 @@ civ.getImprovement(13).Effects.Add(civ.core.Effects.EliminatePopulationPollution
 --Colosseum,                10, 4,    Cst,
 civ.getImprovement(14).Effects.Add(civ.core.Effects.ContentFace, 3)
 --Factory,                  20, 4,    Ind,
+civ.getImprovement(15).Effects.Add(civ.core.Effects.ShieldMultiplier, 50)
 --Manufacturing Plant,      32, 6,    Rob,
+civ.getImprovement(16).Effects.Add(civ.core.Effects.ShieldMultiplier, 50)
 --SDI Defense,              20, 4,    Las,
 civ.getImprovement(17).Effects.Add(civ.core.Effects.MissileDefence, 100)
 --Recycling Center,         20, 2,    Rec,
 --Power Plant,              16, 4,    Ref,
+civ.getImprovement(19).Effects.Add(civ.core.Effects.ShieldMultiplier, 50)
 --Hydro Plant,              24, 4,    E2,
+civ.getImprovement(20).Effects.Add(civ.core.Effects.ShieldMultiplier, 50)
 --Nuclear Plant,            16, 2,    NP,
+civ.getImprovement(21).Effects.Add(civ.core.Effects.ShieldMultiplier, 50)
 --Stock Exchange,           16, 4,    Eco,
 civ.getImprovement(22).Effects.Add(civ.core.Effects.TaxMultiplier, 50)
 civ.getImprovement(22).Effects.Add(civ.core.Effects.LuxMultiplier, 50)
@@ -92,6 +97,11 @@ civ.getImprovement(40).Effects.Add(civ.core.Effects.ContentFace, 1)
 --Oracle (44): doubles the Temple content effect in every city. CivWide marker only;
 -- the actual doubling is applied in code (CityExtensions happiness calc).
 civ.getImprovement(44).CivWide = true
+
+--Hoover Dam (61): acts as a power plant (+50% shields) in every city of the civ.
+-- (Original limits this to the same continent; approximated as civ-wide.)
+civ.getImprovement(61).CivWide = true
+civ.getImprovement(61).Effects.Add(civ.core.Effects.ShieldMultiplier, 50)
 
 --Michelangelo's Chapel (49): acts as a Cathedral in every city of the civilization.
 civ.getImprovement(49).CivWide = true
