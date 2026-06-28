@@ -34,7 +34,44 @@ namespace Civ2engine
             ChoseNextCiv();
         }
 
+        // Turn advancement used to be synchronous recursion (ChoseNextCiv -> StartPlayerTurn ->
+        // AiPlayer.WaitingAtEndOfTurn -> ChoseNextCiv -> ...), which grew the stack one frame per
+        // civ-turn and crashed with a stack overflow once enough turns auto-advanced. This is now a
+        // trampoline: the first call runs an iterative loop, and any re-entrant ChoseNextCiv (from
+        // an AI ending its turn, a dead civ, the human auto-ending, or StartNextTurn wrapping) just
+        // requests another iteration instead of recursing. The loop stops when a player needs input
+        // (the human activating a unit or waiting at end of turn leaves _advancePending false).
+        private bool _inCivLoop;
+        private bool _advancePending;
+
         public void ChoseNextCiv()
+        {
+            if (_inCivLoop)
+            {
+                _advancePending = true; // trampoline: defer to the running loop instead of recursing
+                return;
+            }
+
+            _inCivLoop = true;
+            try
+            {
+                // Safety cap: a normal cascade stops as soon as the human player needs input, so it
+                // only spans a turn or two. A very high bound just prevents a pathological infinite
+                // loop (e.g. no living human to stop it) from hanging the game.
+                var iterations = 0;
+                do
+                {
+                    _advancePending = false;
+                    ChoseNextCivInner();
+                } while (_advancePending && ++iterations < 100_000);
+            }
+            finally
+            {
+                _inCivLoop = false;
+            }
+        }
+
+        private void ChoseNextCivInner()
         {
             if (_activeCivId >= AllCivilizations[^1].Id)
             {
@@ -195,7 +232,22 @@ namespace Civ2engine
         private void TurnBeginning(Civilization activeCiv, IPlayer player)
         {
             // Adjust reputation
-            
+
+            // Revolution: count down the Anarchy transition; when it ends, let the player pick the
+            // new government (until they do, the civ stays in Anarchy and is re-prompted next turn).
+            if (activeCiv.Government == GovernmentFunctions.Anarchy && activeCiv.AnarchyTurnsRemaining > 0)
+            {
+                activeCiv.AnarchyTurnsRemaining--;
+            }
+            if (activeCiv.Government == GovernmentFunctions.Anarchy && activeCiv.AnarchyTurnsRemaining <= 0)
+            {
+                var available = GovernmentFunctions.AvailableGovernments(Rules, activeCiv);
+                if (available.Count > 0)
+                {
+                    player.ChooseGovernment(available);
+                }
+            }
+
             // Reset turns of all units
             foreach (var unit in activeCiv.Units.Where(n => !n.Dead))
             {

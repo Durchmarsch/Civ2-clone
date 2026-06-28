@@ -43,6 +43,8 @@ public class JsonUnitData
         }
     }
 
+    // The save writer emits this Dictionary as an array of {Key,Value} pairs; on load it is
+    // read back via ExtendedDataConverter, registered on the options in GameSerializer.Read.
     public Dictionary<string, string>? ExtendedData { get; set; }
 
     public int X { get; set; }

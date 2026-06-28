@@ -2,7 +2,7 @@ using Model.Input;
 
 namespace Model.Controls;
 
-public readonly struct Shortcut(Key key, bool shift = false, bool ctrl = false) : IEquatable<Shortcut>
+public readonly struct Shortcut(Key key, bool shift = false, bool ctrl = false, bool alt = false) : IEquatable<Shortcut>
 {
 #pragma warning disable CA2211
     public static Shortcut None = new(Key.None);
@@ -13,6 +13,8 @@ public readonly struct Shortcut(Key key, bool shift = false, bool ctrl = false) 
     public bool Shift { get; } = shift;
 
     public bool Ctrl { get; } = ctrl;
+
+    public bool Alt { get; } = alt;
 
     public static Shortcut Parse(string text)
     {
@@ -26,7 +28,8 @@ public readonly struct Shortcut(Key key, bool shift = false, bool ctrl = false) 
             return new Shortcut(
                 key,
                 shift: shortCutElements.Contains("Shift", StringComparer.OrdinalIgnoreCase),
-                ctrl: shortCutElements.Contains("Ctrl", StringComparer.OrdinalIgnoreCase)
+                ctrl: shortCutElements.Contains("Ctrl", StringComparer.OrdinalIgnoreCase),
+                alt: shortCutElements.Contains("Alt", StringComparer.OrdinalIgnoreCase)
             );
         }
 
@@ -51,7 +54,7 @@ public readonly struct Shortcut(Key key, bool shift = false, bool ctrl = false) 
 
     public override int GetHashCode()
     {
-        return (Key, Shift, Ctrl).GetHashCode();
+        return (Key, Shift, Ctrl, Alt).GetHashCode();
     }
 
     public override bool Equals(object? obj)
@@ -61,27 +64,16 @@ public readonly struct Shortcut(Key key, bool shift = false, bool ctrl = false) 
 
     public override string ToString()
     {
-        if (Ctrl)
-        {
-            if (Shift)
-            {
-                return "Ctrl+Shift+" + Key;
-            }
-
-            return "Ctrl+" + Key;
-        }
-
-        if (Shift)
-        {
-            return "Shift+" + Key;
-        }
-
-        return Key.ToString();
+        var prefix = "";
+        if (Ctrl) prefix += "Ctrl+";
+        if (Alt) prefix += "Alt+";
+        if (Shift) prefix += "Shift+";
+        return prefix + Key;
     }
 
     public bool Equals(Shortcut other)
     {
-        return Key == other.Key && Shift == other.Shift && Ctrl == other.Ctrl;
+        return Key == other.Key && Shift == other.Shift && Ctrl == other.Ctrl && Alt == other.Alt;
     }
 
     public static bool operator ==(Shortcut left, Shortcut right)

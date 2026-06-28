@@ -6,6 +6,7 @@ using Civ2engine.Enums;
 using Civ2engine.Events;
 using Civ2engine.MapObjects;
 using Civ2engine.Terrains;
+using Civ2engine.UnitActions;
 using Model.Core.Player;
 using Model.Core.Units;
 
@@ -31,7 +32,7 @@ namespace Civ2engine
             //Look for units on this square or neighbours of this square
             
             var nextUnit = NextUnit(player, units);
-            
+
             // End turn if no units awaiting orders
             if (nextUnit == null)
             {
@@ -53,8 +54,11 @@ namespace Civ2engine
                 //TODO: determine the true values of these extra props
                 OnUnitEvent?.Invoke(this, new ActivationEventArgs(unit: nextUnit, userInitiated: true, reactivation: false));
                 player.SetUnitActive(nextUnit, true);
-                // If the player immediately moved the unit it might be already dead or moved so choose again
-                if (nextUnit.Dead || nextUnit.MovePointsLost == nextUnit.MaxMovePoints)
+                // If the player immediately moved the unit it might be already dead or moved so choose again.
+                // Use MovePoints <= 0 (not MovePointsLost == MaxMovePoints): moving onto high-cost terrain
+                // (forest/hills/mountains) overshoots, leaving MovePointsLost > MaxMovePoints, so the exact
+                // equality failed and the next unit was never chosen -> the turn hung on a spent unit.
+                if (nextUnit.Dead || nextUnit.MovePoints <= 0)
                 {
                     ChooseNextUnit();
                 }
@@ -108,14 +112,13 @@ namespace Civ2engine
                             unit.MovePointsLost = unit.MovePoints;
                             break;
                         case OrderType.GoTo:
-                            if (unit.CurrentLocation.Map.IsValidTileC2(unit.GoToX, unit.GoToY))
-                            {
-                                var tile = unit.CurrentLocation.Map.TileC2(unit.GoToX, unit.GoToY);
-                                var path = Path.CalculatePathBetween(this, unit.CurrentLocation, tile, unit.Domain, unit.MaxMovePoints, unit.Owner, unit.Alpine, unit.IgnoreZonesOfControl);
-                                path?.Follow(this, unit);
-                            }
+                            // Advance the unit toward its GoTo destination this turn.
+                            MovementFunctions.ContinueGoTo(this, unit);
 
-                            if (unit.MovePoints >= 0)
+                            // If it arrived / the goal was unreachable, ContinueGoTo cleared the
+                            // order. With movement still left the unit now awaits new orders, so
+                            // hand control back to the player; otherwise it's done for this turn.
+                            if (unit is { Order: (int)OrderType.NoOrders, MovePoints: > 0 })
                             {
                                 player.SetUnitActive(unit, true);
                                 return false;

@@ -125,8 +125,12 @@ public class GameSerializer
             activeUnitIndex = activeUnitElement.GetInt32();
         }
         
-        //Hydrate units
-        var unitData = gameElement.GetProperty("units").Deserialize<JsonUnitData[]>();
+        //Hydrate units. The save writer emits the unit ExtendedData dictionary as an array of
+        // {Key,Value} pairs, so a custom converter is needed to read it back (otherwise any save
+        // with ExtendedData units - e.g. barbarian "horde" units - fails to load).
+        var unitOptions = new JsonSerializerOptions();
+        unitOptions.Converters.Add(new ExtendedDataConverter());
+        var unitData = gameElement.GetProperty("units").Deserialize<JsonUnitData[]>(unitOptions);
         for (var index = 0; index < unitData.Length; index++)
         {
             var unit = HydrateUnit(unitData[index], rules, gameObjects.Maps, gameObjects.Civilizations,
@@ -259,14 +263,32 @@ public class GameSerializer
 
         if (cityData.Improvements != null)
         {
-            for (var improvementNo = 0;
-                 improvementNo < cityData.Improvements.Length && improvementNo < rules.Improvements.Length - 1;
+            // The save writes bit[i] for rules.Improvements[i] (index 0 is the "Nothing"
+            // placeholder, always false). Read it back with the SAME indexing. The old code added
+            // rules.Improvements[improvementNo + 1], shifting every building up by one: a city's
+            // Palace loaded back as Barracks, so it lost its capital -> high corruption everywhere
+            // -> net trade collapsed to ~1 -> 0 science after loading a save.
+            for (var improvementNo = 1;
+                 improvementNo < cityData.Improvements.Length && improvementNo < rules.Improvements.Length;
                  improvementNo++)
                 if (cityData.Improvements[improvementNo])
-                    city.AddImprovement(rules.Improvements[improvementNo + 1]);
+                    city.AddImprovement(rules.Improvements[improvementNo]);
         }
 
         return city;
+    }
+
+    // Pad a clamped (or null) advances array back to at least the full advance count.
+    private static bool[] PadAdvances(bool[]? saved, int ruleAdvanceCount)
+    {
+        var length = System.Math.Max(ruleAdvanceCount, saved?.Length ?? 0);
+        var result = new bool[length];
+        if (saved != null)
+        {
+            System.Array.Copy(saved, result, saved.Length);
+        }
+
+        return result;
     }
 
     private static Civilization HydrateCiv(JsonCivData jsonCivData, int id, Rules rules)
@@ -291,11 +313,15 @@ public class GameSerializer
             Adjective = string.IsNullOrWhiteSpace(jsonCivData.Adjective) ? tribe.Adjective : jsonCivData.Adjective,
             Money = jsonCivData.Money,
             ReseachingAdvance = jsonCivData.ResearchingAdvance,
-            Advances = jsonCivData.Advances ?? [],
+            // The saved Advances array is clamped (trailing falses trimmed) to save space. Pad it
+            // back to the full advance count so every "advances[techIndex]" access across the engine
+            // and UI (production lists, science advisor, GiveAdvance, ...) stays in bounds.
+            Advances = PadAdvances(jsonCivData.Advances, rules.Advances.Length),
             ScienceRate = jsonCivData.SciRate,
             PlayerType = jsonCivData.PlayerType,
             TaxRate = jsonCivData.TaxRate,
             Government = jsonCivData.GovernmentId,
+            AnarchyTurnsRemaining = jsonCivData.AnarchyTurns,
             AllowedAdvanceGroups = tribe.AdvanceGroups ?? [AdvanceGroupAccess.CanResearch]
         };
     }

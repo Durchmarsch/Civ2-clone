@@ -275,6 +275,64 @@ namespace Civ2engine.UnitActions
             }
         }
 
+        /// <summary>
+        /// Give the unit a "go to" destination and start moving it there this turn. The unit keeps
+        /// the GoTo order and resumes automatically each turn (via <see cref="ContinueGoTo"/> in the
+        /// end-of-turn processing) until it arrives, is blocked, or the goal becomes unreachable.
+        /// </summary>
+        public static void IssueGoTo(IGame game, Unit unit, int destX, int destY)
+        {
+            unit.GoToX = destX;
+            unit.GoToY = destY;
+            unit.Order = (int)OrderType.GoTo;
+            ContinueGoTo(game, unit);
+        }
+
+        /// <summary>
+        /// Advance a unit that holds a GoTo order along the shortest path to its destination, using
+        /// the movement it has this turn. Clears the order (so the unit awaits new orders) when it
+        /// arrives or when the destination is invalid/unreachable; otherwise leaves the order in
+        /// place so it continues next turn. Idempotent for a unit with no moves left.
+        /// </summary>
+        public static void ContinueGoTo(IGame game, Unit unit)
+        {
+            if (unit.Dead || unit.CurrentLocation == null)
+            {
+                return;
+            }
+
+            var map = unit.CurrentLocation.Map;
+
+            // Already there, or the goal is off-map: nothing to do, stop the order.
+            if ((unit.X == unit.GoToX && unit.Y == unit.GoToY) || !map.IsValidTileC2(unit.GoToX, unit.GoToY))
+            {
+                unit.Order = (int)OrderType.NoOrders;
+                return;
+            }
+
+            if (unit.MovePoints <= 0)
+            {
+                return; // no movement this turn; resume next turn
+            }
+
+            var dest = map.TileC2(unit.GoToX, unit.GoToY);
+            var path = Path.CalculatePathBetween(game, unit.CurrentLocation, dest, unit.Domain,
+                unit.MaxMovePoints, unit.Owner, unit.Alpine, unit.IgnoreZonesOfControl);
+            if (path == null || path.Tiles.Length == 0)
+            {
+                unit.Order = (int)OrderType.NoOrders; // unreachable -> stop and await orders
+                return;
+            }
+
+            path.Follow(game, unit);
+
+            // Arrived exactly on the destination: clear the order so the unit wakes up.
+            if (unit.X == unit.GoToX && unit.Y == unit.GoToY)
+            {
+                unit.Order = (int)OrderType.NoOrders;
+            }
+        }
+
         internal static bool AttackAtTile(Unit unit, IGame game, Tile tileTo)
         {
             if (unit.AttackBase == 0)

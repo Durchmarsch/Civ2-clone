@@ -35,6 +35,15 @@ namespace Model.Core.Player
         void MapChanged(List<Tile> tiles);
         void WaitingAtEndOfTurn();
         void NotifyAdvanceResearched(int advance);
+
+        /// <summary>
+        /// Called when a revolution's Anarchy period has ended and the player must pick the new
+        /// government. Implementations should adopt one of <paramref name="availableGovernments"/>
+        /// (via <c>GovernmentFunctions.AdoptGovernment</c>); until they do the civ stays in Anarchy.
+        /// </summary>
+        /// <param name="availableGovernments">Government indices the civ may adopt.</param>
+        void ChooseGovernment(List<int> availableGovernments);
+
         void FoodShortage(City city);
         void CityDecrease(City city);
         void TurnStart(int turnNumber);

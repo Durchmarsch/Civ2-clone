@@ -21,7 +21,13 @@ namespace Civ2engine.Scripting
         public ScriptEngine(Game game, string[] paths)
         {
             _scriptPaths = paths.ToList();
-            _scriptPaths.Add(Environment.CurrentDirectory + Path.DirectorySeparatorChar + "Scripts"); 
+            // Look for the bundled Lua scripts next to the application assemblies (works no matter
+            // what the current working directory is) as well as relative to the CWD. Relying on the
+            // CWD alone meant the scripts silently failed to load when the game was launched from a
+            // directory other than the bin folder -> improvement effects (capital, multipliers, ...)
+            // never got applied, so e.g. capitals had corruption and research produced 0 beakers.
+            _scriptPaths.Add(AppContext.BaseDirectory + "Scripts");
+            _scriptPaths.Add(Environment.CurrentDirectory + Path.DirectorySeparatorChar + "Scripts");
             _lua = new Lua();
             
             _environment = _lua.CreateEnvironment();

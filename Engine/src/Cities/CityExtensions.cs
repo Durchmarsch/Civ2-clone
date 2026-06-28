@@ -250,7 +250,9 @@ namespace Civ2engine
                 //Destroy city
                 city.Location.CityHere = null;
                 city.Owner.Cities.Remove(city);
-                city.WorkedTiles.ForEach(t => t.WorkedBy = null);
+                // Iterate a copy: setting WorkedBy = null removes the tile from city.WorkedTiles
+                // (via the Tile.WorkedBy setter), which would mutate the list we're enumerating.
+                city.WorkedTiles.ToList().ForEach(t => t.WorkedBy = null);
                 city.EliminateCityUnits(game);
             }
             else

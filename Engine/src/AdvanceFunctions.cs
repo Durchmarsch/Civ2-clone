@@ -212,6 +212,12 @@ namespace Civ2engine.Advances
 
         public static List<Advance> CalculateAvailableResearch(Game game, Civilization activeCiv)
         {
+            // Civs without research data set up (e.g. barbarians) can't research.
+            if (activeCiv.AllowedAdvanceGroups == null || activeCiv.Advances == null)
+            {
+                return new List<Advance>();
+            }
+
             var allAvailable = game.Rules.Advances.Where(a =>
                 activeCiv.AllowedAdvanceGroups[a.AdvanceGroup] == AdvanceGroupAccess.CanResearch &&
                 HasTech(activeCiv, a.Prereq1) && HasTech(activeCiv, a.Prereq1) && (activeCiv.Advances.Length < a.Index || !activeCiv.Advances[a.Index])).ToList();

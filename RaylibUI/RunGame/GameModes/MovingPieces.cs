@@ -52,6 +52,16 @@ public class MovingPieces : IGameMode
 
             {new Shortcut(Key.Up), MovementFunctions.TryMoveNorth}, {new Shortcut(Key.Down), MovementFunctions.TryMoveSouth},
             {new Shortcut(Key.Left), MovementFunctions.TryMoveWest}, {new Shortcut(Key.Right), MovementFunctions.TryMoveEast},
+
+            // Diagonal movement without a numpad: Shift+Left/Right = upper diagonals (NW/NE),
+            // Alt+Left/Right = lower diagonals (SW/SE). Ctrl+Left/Right is also accepted, but on
+            // macOS the OS swallows Ctrl+Arrow for Spaces switching, so Alt is the portable choice.
+            {new Shortcut(Key.Left, shift: true), MovementFunctions.TryMoveNorthWest},
+            {new Shortcut(Key.Right, shift: true), MovementFunctions.TryMoveNorthEast},
+            {new Shortcut(Key.Left, alt: true), MovementFunctions.TryMoveSouthWest},
+            {new Shortcut(Key.Right, alt: true), MovementFunctions.TryMoveSouthEast},
+            {new Shortcut(Key.Left, ctrl: true), MovementFunctions.TryMoveSouthWest},
+            {new Shortcut(Key.Right, ctrl: true), MovementFunctions.TryMoveSouthEast},
         };
     }
 
@@ -78,23 +88,41 @@ public class MovingPieces : IGameMode
     {
         if (mouseButton == MouseButton.Left)
         {
-            // GOTO support
-            if (_downTime.HasValue && DateTime.Now - _downTime.Value > _holdTime && !(Input.IsKeyDown(KeyboardKey.LeftControl) || Input.IsKeyDown(KeyboardKey.RightControl)))
+            // Single-step move: clicking a tile directly adjacent to the active unit moves it one
+            // step there (same as the arrow keys), including attacking an adjacent enemy. This is
+            // the Civ2 behaviour and makes mouse movement predictable; distant clicks still GOTO.
+            // A friendly city tile is left to the city-window handler below.
+            var activeUnit = _gameScreen.Player.ActiveUnit;
+            if (activeUnit is { Dead: false } && activeUnit.CurrentLocation != null
+                && !(tile.CityHere != null && tile.CityHere.OwnerId == activeUnit.Owner.Id)
+                && activeUnit.CurrentLocation.Neighbours().Contains(tile))
             {
-                var unit = _gameScreen.Player.ActiveUnit!;
-                var path = Path.CalculatePathBetween(_gameScreen.Game, _gameScreen.Player.ActiveTile, tile, unit.Domain, unit.MaxMovePoints,
-                    unit.Owner, unit.Alpine, unit.IgnoreZonesOfControl);
-                if (path != null)
+                MovementFunctions.MoveC2(_gameScreen.Game, activeUnit, tile.X - activeUnit.X, tile.Y - activeUnit.Y);
+                if (!activeUnit.AwaitingOrders)
                 {
-                    unit.GoToX = tile.X;
-                    unit.GoToY = tile.Y;
-                    unit.Order = (int)OrderType.GoTo;
-                    path.Follow(_gameScreen.Game, unit);
-                    if (!unit.AwaitingOrders)
+                    _gameScreen.Game.ChooseNextUnit();
+                }
+                return true;
+            }
+
+            // Distant click: issue a GOTO. The unit pathfinds toward the tile, moving as far as it
+            // can this turn and resuming automatically each turn until it arrives (handled in the
+            // engine's end-of-turn processing). A reachable destination is required.
+            var ctrlHeld = Input.IsKeyDown(KeyboardKey.LeftControl) || Input.IsKeyDown(KeyboardKey.RightControl);
+            if (!ctrlHeld && activeUnit is { Dead: false } && activeUnit.CurrentLocation != null
+                && !(tile.CityHere != null && tile.CityHere.OwnerId == activeUnit.Owner.Id))
+            {
+                var path = Path.CalculatePathBetween(_gameScreen.Game, activeUnit.CurrentLocation, tile,
+                    activeUnit.Domain, activeUnit.MaxMovePoints, activeUnit.Owner, activeUnit.Alpine,
+                    activeUnit.IgnoreZonesOfControl);
+                if (path is { Tiles.Length: > 0 })
+                {
+                    MovementFunctions.IssueGoTo(_gameScreen.Game, activeUnit, tile.X, tile.Y);
+                    if (!activeUnit.AwaitingOrders)
                     {
                         _gameScreen.Game.ChooseNextUnit();
                     }
-                    return false;
+                    return true;
                 }
             }
             var city = tile.CityHere;
@@ -425,11 +453,19 @@ public class MovingPieces : IGameMode
     private const string GotoCursor = "GOTO_TO";
     public void MouseDown(Tile tile)
     {
-        _downTime = DateTime.Now;
-        _gameScreen.Main.Schedule(GotoCursor, _holdTime, () =>
+        // MouseDown is raised every frame while the button is held (see BaseControl.OnMouseMove),
+        // so only record the press time on the FIRST frame. Resetting it every frame made the
+        // measured "hold" duration ~1 frame (≈11ms @ 90fps), which is usually below _holdTime, so
+        // the GOTO branch in MapClicked almost never fired -> distant clicks rarely moved the unit.
+        // MouseClear() resets it to null on release.
+        if (_downTime == null)
         {
-            Input.SetMouseCursor(MouseCursor.Crosshair);
-        });
+            _downTime = DateTime.Now;
+            _gameScreen.Main.Schedule(GotoCursor, _holdTime, () =>
+            {
+                Input.SetMouseCursor(MouseCursor.Crosshair);
+            });
+        }
     }
 
     public void MouseClear()

@@ -2,6 +2,7 @@ using Civ2engine;
 using Civ2engine.Advances;
 using Civ2engine.Enums;
 using Civ2engine.Events;
+using Civ2engine.IO;
 using Civ2engine.MapObjects;
 using Model.Controls;
 using Model.Core;
@@ -156,6 +157,63 @@ public class LocalPlayer : IPlayer
                 Civilization.Adjective, activeInterface.GetScientistName(Civilization.Epoch),
                 _gameScreen.Game.Rules.Advances[advance].Name
             });
+
+        // If this advance unlocks a new form of government, offer a revolution.
+        var newGov = GovernmentFunctions.GovernmentUnlockedBy(_gameScreen.Game.Rules, advance);
+        if (newGov >= 0 && newGov != Civilization.Government
+            && Civilization.Government != GovernmentFunctions.Anarchy)
+        {
+            OfferRevolution(newGov);
+        }
+    }
+
+    private CivDialog? _revolutionDialog;
+    private CivDialog? _governmentDialog;
+    private List<int>? _governmentOptions;
+
+    private void OfferRevolution(int newGovernment)
+    {
+        var govName = _gameScreen.Game.Rules.Governments[newGovernment].Name;
+        _revolutionDialog = new CivDialog(_gameScreen.Main, new DialogElements(new PopupBox
+        {
+            Title = "Revolution",
+            Text = new[] { $"The people demand a new government! Shall we start a revolution to become a {govName}?" },
+            Button = new[] { Labels.For(LabelIndex.Yes), Labels.For(LabelIndex.No) }
+        }), HandleRevolutionChoice);
+        _gameScreen.ShowDialog(_revolutionDialog, stack: true);
+    }
+
+    private void HandleRevolutionChoice(string button, int index, IList<bool>? checks,
+        IDictionary<string, string>? textBoxes)
+    {
+        _gameScreen.CloseDialog(_revolutionDialog);
+        if (button == Labels.For(LabelIndex.Yes))
+        {
+            GovernmentFunctions.StartRevolution(_gameScreen.Game, Civilization);
+        }
+    }
+
+    public void ChooseGovernment(List<int> availableGovernments)
+    {
+        var governments = _gameScreen.Game.Rules.Governments;
+        _governmentOptions = availableGovernments;
+        _governmentDialog = new CivDialog(_gameScreen.Main, new DialogElements(new PopupBox
+        {
+            Title = "Select Type of Government",
+            Options = availableGovernments.Select(g => governments[g].Name).ToArray(),
+            Button = new[] { Labels.Ok }
+        }), HandleGovernmentChosen);
+        _gameScreen.ShowDialog(_governmentDialog, stack: true);
+    }
+
+    private void HandleGovernmentChosen(string button, int selectedIndex, IList<bool>? checks,
+        IDictionary<string, string>? textBoxes)
+    {
+        _gameScreen.CloseDialog(_governmentDialog);
+        if (_governmentOptions != null && selectedIndex >= 0 && selectedIndex < _governmentOptions.Count)
+        {
+            GovernmentFunctions.AdoptGovernment(_gameScreen.Game.Rules, Civilization, _governmentOptions[selectedIndex]);
+        }
     }
 
     public void FoodShortage(City city)

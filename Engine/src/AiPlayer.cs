@@ -118,6 +118,16 @@ namespace Civ2engine
             // What should the AI do??
         }
 
+        public void ChooseGovernment(List<int> availableGovernments)
+        {
+            // The AI doesn't currently start revolutions, so this is only reached defensively (e.g.
+            // a loaded save left a civ mid-anarchy). Adopt the most advanced available government.
+            if (availableGovernments.Count > 0)
+            {
+                GovernmentFunctions.AdoptGovernment(game.Rules, Civilization, availableGovernments.Max());
+            }
+        }
+
         public void FoodShortage(City city)
         {
             // What should the AI do??

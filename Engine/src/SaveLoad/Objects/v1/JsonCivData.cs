@@ -17,6 +17,7 @@ public class JsonCivData
         TribeId = civilization.TribeId;
         Gender = civilization.LeaderGender;
         GovernmentId = civilization.Government;
+        AnarchyTurns = civilization.AnarchyTurnsRemaining;
         Money = civilization.Money;
         ResearchingAdvance = civilization.ReseachingAdvance;
         Advances = civilization.Advances.Clamp();
@@ -57,6 +58,7 @@ public class JsonCivData
     public int Gender { get; }
     public string? LeaderName { get; set; }
     public int GovernmentId { get; set; }
+    public int AnarchyTurns { get; set; }
     public string? TribeName { get; set; }
     public int Money { get; set; }
     public int ResearchingAdvance { get; set; }

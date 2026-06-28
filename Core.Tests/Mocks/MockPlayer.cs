@@ -78,6 +78,10 @@ public class MockPlayer : IPlayer
     {
     }
 
+    public void ChooseGovernment(List<int> availableGovernments)
+    {
+    }
+
     public void FoodShortage(City city)
     {
     }

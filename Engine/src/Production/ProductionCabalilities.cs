@@ -23,9 +23,16 @@ namespace Civ2engine.Production
             var orders = possibleOrders
                 .Where(o => o.RequiredTech != AdvancesConstants.No && o.ExpiresTech != AdvancesConstants.No).ToList();
 
+            // A civ's Advances array may be shorter than the highest tech index (it is clamped
+            // when saved - trailing falses are trimmed). An ExpiresTech/RequiredTech index at or
+            // beyond Advances.Length therefore means "the civ does not (and cannot yet) have that
+            // tech": such an item is NOT obsolete, and is only buildable if it has no prerequisite.
+            // Treating an out-of-range ExpiresTech as "false" (the old code did) wrongly marked
+            // every not-yet-obsolete unit as obsolete after loading a save -> only buildings were
+            // buildable.
             _availableProducts = civList.Select(c =>
                     orders.Where(o =>
-                        (o.ExpiresTech == AdvancesConstants.Nil || (o.ExpiresTech < c.Advances.Length && !c.Advances[o.ExpiresTech])) &&
+                        (o.ExpiresTech == AdvancesConstants.Nil || o.ExpiresTech >= c.Advances.Length || !c.Advances[o.ExpiresTech]) &&
                         (o.RequiredTech == AdvancesConstants.Nil || (o.RequiredTech < c.Advances.Length && c.Advances[o.RequiredTech]))).ToList())
                 .ToArray();
 

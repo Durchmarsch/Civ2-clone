@@ -50,9 +50,10 @@ public class GameSerializerTests
             },
             Leaders = new[] { new LeaderDefaults { NameMale = "Cesar", Plural = "Romans", Adjective = "Roman", Titles = Array.Empty<LeaderTitle>() } },
             Governments = new[] { new Government { Name = "Despotism", Level = 0 } },
-            Improvements = new[] { 
-                new Improvement { Name = "None", Type = 0 }, 
-                new Improvement { Name = "Palace", Type = 1 } 
+            Improvements = new[] {
+                new Improvement { Name = "None", Type = 0 },
+                new Improvement { Name = "Palace", Type = 1 },
+                new Improvement { Name = "Barracks", Type = 2 }
             },
             CaravanCommoditie = new[] { new Commodity { Name = "Silk" } },
             Terrains = new List<Terrain[]> { Enumerable.Repeat(terrain, 11).ToArray() },
@@ -91,8 +92,11 @@ public class GameSerializerTests
             MapIndex = 0, 
             X = unitTile.X, 
             Y = unitTile.Y, 
-            CurrentLocation = unitTile 
+            CurrentLocation = unitTile
         };
+        // Regression: units with ExtendedData (e.g. barbarian "horde" units) must round-trip.
+        // The writer emits this dictionary as [{"Key":..,"Value":..}]; the reader must accept it.
+        unit.ExtendedData["horde"] = "1";
         civ.Units.Add(unit);
 
         var cityTile = map.Tile[3, 3];
@@ -107,6 +111,11 @@ public class GameSerializerTests
             Size = 1 
         };
         civ.Cities.Add(city);
+        // Regression: a city's improvements must round-trip to the SAME improvement, not shift by
+        // one. Give the city a Palace (rules index 1); after load it must still be the Palace and
+        // not the next improvement (Barracks). The shift bug made loaded capitals lose their
+        // Palace -> corruption everywhere -> 0 science.
+        city.AddImprovement(rules.Improvements[1]);
         game.Setup(g => g.AllCities).Returns(new List<City> { city });
         
         var gameDate = new Mock<IGameDate>();
@@ -144,5 +153,10 @@ public class GameSerializerTests
         Assert.Equal(map.YDim, loadedGame.Maps[0].YDim);
         Assert.Single(loadedGame.AllCivilizations[1].Units);
         Assert.Single(loadedGame.AllCities);
+        var loadedUnit = loadedGame.AllCivilizations[1].Units[0];
+        Assert.Equal("1", loadedUnit.ExtendedData["horde"]);
+        var loadedCity = loadedGame.AllCities[0];
+        Assert.True(loadedCity.ImprovementExists(1), "Palace (type 1) should survive the round-trip");
+        Assert.False(loadedCity.ImprovementExists(2), "improvement must not shift to Barracks (type 2)");
     }
 }

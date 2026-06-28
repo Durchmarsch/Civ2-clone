@@ -197,22 +197,19 @@ public class GameScreen : BaseScreen
 
     public override void OnKeyPress(KeyboardKey key)
     {
-        if (key is KeyboardKey.LeftAlt or KeyboardKey.RightAlt)
-        {
-            Focused = MenuBar.Controls!.First();
-            return;
-        }
-        var command = new Shortcut(key.ToModelKey(), Input.IsKeyDown(KeyboardKey.RightShift) ||
-                                        Input.IsKeyDown(KeyboardKey.LeftShift)
-            , Input.IsKeyDown(KeyboardKey.LeftControl) ||
-              Input.IsKeyDown(KeyboardKey.RightControl)
+        // Note: Alt is used as a movement modifier (Alt+arrow = lower diagonals), so we no longer
+        // grab menu-bar focus on Alt. The menu bar is reachable with the mouse.
+        var command = new Shortcut(key.ToModelKey(),
+            Input.IsKeyDown(KeyboardKey.RightShift) || Input.IsKeyDown(KeyboardKey.LeftShift),
+            Input.IsKeyDown(KeyboardKey.LeftControl) || Input.IsKeyDown(KeyboardKey.RightControl),
+            Input.IsKeyDown(KeyboardKey.LeftAlt) || Input.IsKeyDown(KeyboardKey.RightAlt)
         );
 
         if (!ActiveMode.HandleKeyPress(command) && GameCommands.ContainsKey(command))
         {
             TryExecuteCommand(GameCommands[command]);
         }
-        
+
     }
 
     public override void InterfaceChanged(Sound man)

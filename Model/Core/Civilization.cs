@@ -28,6 +28,12 @@ namespace Model.Core
 
         public int Government { get; set; }
 
+        /// <summary>
+        /// Turns of Anarchy left before the civ can adopt a new government (revolution transition).
+        /// 0 when not in a revolution. While &gt; 0 the civ's Government is Anarchy (index 0).
+        /// </summary>
+        public int AnarchyTurnsRemaining { get; set; }
+
         public bool AnyUnitsAwaitingOrders => Units.Any(unit => unit.AwaitingOrders);
         
         public int LuxRate => 100 - TaxRate - ScienceRate;

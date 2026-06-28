@@ -1,4 +1,5 @@
 ﻿using Civ2engine;
+using Civ2engine.Advances;
 using Civ2engine.IO;
 using Model;
 using Model.Controls;
@@ -47,10 +48,28 @@ public class ScienceAdvisorWindow : BaseDialog
         Controls.Add(tribeLabel);
         Controls.Add(titleLabel);
 
-        if (_civ.ReseachingAdvance != -1)
+        // ReseachingAdvance is -1 (Nil) or -2 (No, set right after a tech completes) when nothing
+        // is being researched; guard the array access against both rather than just != -1.
+        if (_civ.ReseachingAdvance >= 0 && _civ.ReseachingAdvance < game.Rules.Advances.Length)
         {
             var advance = game.Rules.Advances[_civ.ReseachingAdvance];
-            Controls.Add(new AdvisorsHeaderLabel(this, $"{Labels.For(LabelIndex.Researching)}: {advance.Name}")
+
+            // Turns until the current research completes: ceil(remaining beakers / beakers-per-turn).
+            var turnsText = "—";
+            if (game is Game concreteGame)
+            {
+                var cost = AdvanceFunctions.CalculateScienceCost(concreteGame, _civ);
+                var perTurn = _civ.Cities.Sum(c => c.GetScience());
+                if (cost > 0 && perTurn > 0)
+                {
+                    var remaining = Math.Max(0, cost - _civ.Science);
+                    var turns = (remaining + perTurn - 1) / perTurn;
+                    turnsText = Math.Max(1, turns).ToString();
+                }
+            }
+
+            Controls.Add(new AdvisorsHeaderLabel(this,
+                $"{Labels.For(LabelIndex.Researching)}: {advance.Name} ({turnsText} {Labels.For(LabelIndex.Turns)})")
             { Location = new(LayoutPadding.Left, titleLabel.Location.Y + 27), Width = _width - PaddingSide });
         }
 
@@ -58,7 +77,7 @@ public class ScienceAdvisorWindow : BaseDialog
         var allAdvances = game.Rules.Advances;
         for (var i = 0; i < allAdvances.Length; i++)
         {
-            if (!_civ.Advances[i]) continue;
+            if (i >= _civ.Advances.Length || !_civ.Advances[i]) continue;
 
             var advance = allAdvances[i];
             var icon = _active.PicSources["advanceCategories"][5 * advance.Epoch + advance.KnowledgeCategory];
