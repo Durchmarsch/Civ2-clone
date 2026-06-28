@@ -724,7 +724,9 @@ namespace Civ2engine.UnitActions
                         
                         game.Players[loser.Id].CityLost(tileTo.CityHere);
 
-                        if (!game.ScenarioData.ForbidTechFromConquests)
+                        // ScenarioData is only set for loaded scenarios; in a normal game it is null,
+                        // and tech theft from conquest is allowed by default.
+                        if (game.ScenarioData is not { ForbidTechFromConquests: true })
                         {
                             var techs = AdvanceFunctions.CalculateResearchTheft(game, unit.Owner, loser);
                             if (techs.Count > 0)

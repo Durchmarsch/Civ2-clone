@@ -178,6 +178,9 @@ public class LocalPlayer : IPlayer
         {
             Title = "Revolution",
             Text = new[] { $"The people demand a new government! Shall we start a revolution to become a {govName}?" },
+            // CivDialog indexes LineStyles per Text line; it must be the same length as Text or the
+            // dialog constructor throws a NullReferenceException.
+            LineStyles = new[] { TextStyles.Centered },
             Button = new[] { Labels.For(LabelIndex.Yes), Labels.For(LabelIndex.No) }
         }), HandleRevolutionChoice);
         _gameScreen.ShowDialog(_revolutionDialog, stack: true);

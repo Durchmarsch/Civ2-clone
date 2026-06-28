@@ -389,3 +389,80 @@
 | 列奥纳多工坊 | 单位升级逻辑 + 单位“被谁取代”数据（均无） |
 
 这些每个都是一块独立的游戏机制开发，不是改 lua 能解决的;要做需各自立项。
+
+---
+
+> 第八轮（macOS，工作目录 `/Users/fanbin/Civ2-clone`）。本轮主线是**移动操作 + 回合推进崩溃**：先按第一性原理重写了鼠标 / GOTO 移动，再揪出"结束回合 / GOTO 后必崩"的根因——**回合推进用同步递归、迟早爆栈**——改成迭代后,又把被栈溢出长期掩盖的一批 AI 回合相关 bug 逐个暴露并修掉。另加了"革命 / 换政体"功能。已提交：`3f98782`（主体）+ 后续补丁。
+
+## 31. 鼠标移动单位：相邻走一步 + 远处 GOTO（第八轮 / 需求）
+
+- **背景**：原实现鼠标移动**只有 GOTO 一种**(按住 >15ms 触发寻路 `Follow`),且"点相邻格走一步"缺失,导致"时灵时不灵、莫名其妙"。
+- **实现**（`RaylibUI/RunGame/GameModes/MovingPieces.cs:MapClicked`）：
+  - **点相邻格** = 走一步(`MovementFunctions.MoveC2`,含攻击相邻敌人);己方城市格留给城市窗口。
+  - **点远处** = 下 GOTO(见 §33),单位寻路过去、每回合自动续走。
+  - 判定相邻用 `ActiveUnit.CurrentLocation.Neighbours().Contains(tile)`;`MoveC2` 的 delta = `tile.X/Y − unit.X/Y`,`TileC2` 自带环绕取模,边缘格也对。
+
+## 32. 远距离 GOTO 基本不动(只偶尔触发)（第八轮）
+
+- **现象**：点远处单位基本不走,极偶尔才动一下。
+- **根因**（诊断实证）：`BaseControl.OnMouseMove` 每帧都重新触发 `MouseDown` 事件 → `MovingPieces.MouseDown` 每帧把 `_downTime` 重置成"现在"。于是松手时 `now − _downTime` 只等于**最后一帧耗时**(≈11ms @ 90fps),低于 15ms 阈值 → GOTO 分支几乎从不进入。
+- **修复**：`_downTime` 只在**第一次**按下时记录(`if (_downTime == null)`),按住期间不重置;`MouseClear` 松手时清空。
+
+## 33. 移动逻辑按第一性原理重写：GOTO 作为持续状态（第八轮）
+
+- **需求**：远处点击应"连续自主移动"——点一次,单位每回合自动沿路走到目标。
+- **实现**（`Engine/src/UnitActions/MovementFunctions.cs`,新增两个统一方法）：
+  - `IssueGoTo(unit, x, y)`:设目的地 + `Order=GoTo`,并立即在本回合推进。
+  - `ContinueGoTo(unit)`:寻路到目的地、用本回合移动力 `Follow`;**到达 / 不可达 → 清除 GoTo(单位醒来待命)**,否则保留状态下回合续走;对 0 移动力安全(空操作)。
+- **三个接入点统一调用**：① 点远处 → `IssueGoTo`;② `ProcessEndOfTurn` 的 GoTo 分支 → `ContinueGoTo`;③ GoTo 单位不算"待命",不打断玩家。
+- 连带修 `ProcessEndOfTurn` 的 GoTo 重新激活判断 `MovePoints >= 0` → `> 0`(0 移动力单位不该被反复激活)。
+
+## 34. 回合推进栈溢出 → 改递归为迭代(蹦床)（第八轮，致命根因）
+
+- **现象**：开局连按"结束回合"、或点 GOTO 后,游戏频繁崩溃退出(exit 134)。诊断显示是**栈溢出**。
+- **根因**：回合推进是**同步递归**——`ChoseNextCiv → StartPlayerTurn → AiPlayer.WaitingAtEndOfTurn → ChoseNextCiv → …`,每个文明回合压一层栈。一旦因某种原因连续自动推进很多回合(失控自动推进 / 人类文明被消灭后级联跳过),栈无限增长 → 溢出。AI 回合内的 Lua 帧很厚,实际几百层就爆,深度护栏(原设 1000 / 200)来不及触发。
+- **修复**（`Engine/src/Game.Actions.cs`）：把 `ChoseNextCiv` 改成**蹦床(trampoline)**——首次进入跑一个 `do/while` 迭代循环;循环内任何"再次 `ChoseNextCiv`"(AI 结束回合 / 死亡文明跳过 / 人类自动结束 / `StartNextTurn` 翻页)只设 `_advancePending=true` 并**立即返回**,由外层循环迭代推进,不再压栈。加 10 万次迭代上限作为病态死循环的兜底。
+- **效果**：无论自动推进多少回合都不会再爆栈。这是之前一连串"结束回合 / GOTO 必崩"的总根因。
+
+## 35. 蹦床放行后暴露的一批 AI 回合 bug（第八轮）
+
+栈溢出修掉、AI 回合能完整跑之后,以下被长期掩盖的预存 bug 逐个浮出并修复：
+
+- **`ShrinkCity` 集合并发修改崩溃**（`Engine/src/Cities/CityExtensions.cs:253`）：`city.WorkedTiles.ForEach(t => t.WorkedBy = null)` —— 而 `Tile.WorkedBy` 的 setter 会从 `WorkedTiles` 移除该格,边遍历边改 → `Collection was modified`。AI 攻下 / 摧毁城市时必崩。**修复**：遍历 `WorkedTiles.ToList()` 拷贝。
+- **AI 夺城 `ScenarioData` 空引用**（`MovementFunctions.cs:727`）：单位移动进敌方城市(夺城)时 `if (!game.ScenarioData.ForbidTechFromConquests)`,而普通(非 scenario)游戏 `ScenarioData` 为 null → 崩。**修复**：`game.ScenarioData is not { ForbidTechFromConquests: true }`(null 视为不禁止)。
+- **革命弹窗 `CivDialog` 空引用**（`LocalPlayer.cs:OfferRevolution`）：PopupBox 设了 `Text` 却没设配套的 `LineStyles`,`CivDialog` 构造函数按行索引 `LineStyles` 时空引用。**修复**：补 `LineStyles = [TextStyles.Centered]`(长度须与 `Text` 一致)。
+
+## 36. 革命 / 换政体功能（第八轮 / 新功能，含无政府过渡）
+
+- **现象**：研发出 Monarchy 等政体科技后,原版应弹"是否革命"窗口,本克隆**完全没实现**(只有作弊菜单的 `ForceGovernment` 能强切)。
+- **政体↔科技映射**：按名字(`GovernmentFunctions.GovernmentAdvanceNames`)——Monarchy / Communism / Fundamentalism / Democracy 同名,Republic ↔ "The Republic"。Anarchy(0)/Despotism(1) 无需科技、恒可用。
+- **实现**：
+  - `Engine/src/GovernmentFunctions.cs`(新增)：`GovernmentTechIndex` / `IsGovernmentAvailable` / `AvailableGovernments` / `GovernmentUnlockedBy` / `StartRevolution`(进无政府,`AnarchyTurnsRemaining = Random 1–3`)/ `AdoptGovernment`(设政府 + 领袖称号)。
+  - `Model/Core/Civilization.cs`:新增 `AnarchyTurnsRemaining`;读档持久化(`JsonCivData` + `HydrateCiv`)。
+  - `Model/Core/Player/IPlayer.cs`:新增 `ChooseGovernment(List<int>)`;`LocalPlayer` 弹选政体对话框,`AiPlayer` 取最高可用政体(防御性,AI 暂不主动革命),`MockPlayer` 补 stub。
+  - `LocalPlayer.NotifyAdvanceResearched`:研发出政体科技 → `OfferRevolution`(Yes/No 弹窗)→ Yes → `StartRevolution`。
+  - `Game.Actions.TurnBeginning`:无政府每回合倒数,到 0 调 `player.ChooseGovernment`。
+- **回归测试**：`Core.Tests/Government/GovernmentFunctionsTests.cs`(命名空间用 `Core.Tests.Governance`,避免与 `Government` 类型撞名)。
+
+## 37. 第八轮改动文件清单
+
+- `Engine/src/Game.Actions.cs` —— 回合推进蹦床(递归→迭代)+ 无政府倒数
+- `Engine/src/Game.ActionsUnits.cs` —— `ProcessEndOfTurn` GoTo 用 `ContinueGoTo` + `>0` 修正
+- `Engine/src/UnitActions/MovementFunctions.cs` —— `IssueGoTo` / `ContinueGoTo` + 夺城 `ScenarioData` null 防护
+- `Engine/src/Cities/CityExtensions.cs` —— `ShrinkCity` 遍历拷贝
+- `Engine/src/GovernmentFunctions.cs`（新增）—— 政体 / 革命逻辑
+- `Model/Core/Civilization.cs` / `IPlayer.cs` —— `AnarchyTurnsRemaining` / `ChooseGovernment`
+- `Engine/src/AiPlayer.cs` / `RaylibUI/RunGame/LocalPlayer.cs` —— `ChooseGovernment` + 革命弹窗
+- `Engine/src/SaveLoad/Objects/v1/JsonCivData.cs` / `GameSerializer.cs` —— 无政府回合持久化
+- `RaylibUI/RunGame/GameModes/MovingPieces.cs` —— 相邻走一步 / 远处 GOTO / `_downTime` 修正
+- `Core.Tests/Government/GovernmentFunctionsTests.cs`（新增）—— 政体回归
+- 全套 122/122 通过。
+
+## 38. 仍未解决 / 待办（第八轮）
+
+- **失城 / 夺城无任何提示**（`LocalPlayer.CityLost` / `CityCaptured` 都是空 TODO）：AI 在雾里夺走你的城你也完全无感;原版应弹通知(失城可能直接 game over)。**待做**。
+- **战斗"同归于尽"**：用户报告"敌方攻击我、两单位都消失"。战斗解析代码上只死一方;疑似就是 §35 的 `ShrinkCity` / 夺城崩溃的连带表现,修崩溃后或已消失,待用户复现确认。
+- **AI 不会主动革命**：`AiPlayer.NotifyAdvanceResearched` 暂为空,AI 永远停在初始政府;`ChooseGovernment` 仅作读档防御。
+- **`CalculateAvailableResearch` 前置 2 从不检查**(承第六轮 §29,`AdvanceFunctions.cs:216` 把 Prereq1 查两遍)：某些双前置科技会提前可研究。未改。
+- **地图左边缘幽灵"4"**：雾中残留城市规模标签,纯显示;需存档复现才能精修。
+- 灌溉草地"食物不涨"= **专制惩罚**(原版机制,非 bug):草地 2→灌溉 3→专制 −1→2。换君主制或灌溉平原可见 +1。
